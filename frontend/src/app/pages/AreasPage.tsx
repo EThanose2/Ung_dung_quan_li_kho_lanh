@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Plus, Pencil, Trash2, X, AlertCircle, Thermometer, Droplets } from 'lucide-react';
 import { store } from '../store';
 import { Area } from '../types';
 
@@ -7,6 +7,8 @@ export function AreasPage() {
   const [areas, setAreas] = useState(store.getAreas());
   const [showModal, setShowModal] = useState(false);
   const [editingArea, setEditingArea] = useState<Area | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const users = store.getUsers().filter(u => u.role === 'Operator');
   const warehouses = store.getWarehouses();
   const foodTypes = store.getFoodTypes();
@@ -27,318 +29,192 @@ export function AreasPage() {
     deviceCount: 0
   });
 
-  const handleAdd = () => {
-    setEditingArea(null);
-    setFormData({
-      name: '',
-      warehouseId: '',
-      type: 'vegetable',
-      operatorId: '',
-      foodTypeIds: [],
-      currentTemp: 0,
-      currentHumidity: 0,
-      minTemp: 0,
-      maxTemp: 0,
-      minHumidity: 0,
-      maxHumidity: 0,
-      status: 'normal',
-      deviceCount: 0
-    });
-    setShowModal(true);
-  };
+  // Logic tính toán khoảng giao an toàn (Set Intersection)
+  const calculateThresholds = (selectedIds: string[]) => {
+    if (selectedIds.length === 0) return { minT: 0, maxT: 0, minH: 0, maxH: 0, conflict: false };
 
-  const handleEdit = (area: Area) => {
-    setEditingArea(area);
-    setFormData({
-      name: area.name,
-      warehouseId: area.warehouseId,
-      type: area.type,
-      operatorId: area.operatorId || '',
-      foodTypeIds: area.foodTypeIds,
-      currentTemp: area.currentTemp,
-      currentHumidity: area.currentHumidity,
-      minTemp: area.minTemp,
-      maxTemp: area.maxTemp,
-      minHumidity: area.minHumidity,
-      maxHumidity: area.maxHumidity,
-      status: area.status,
-      deviceCount: area.deviceCount
-    });
-    setShowModal(true);
+    const selectedFoods = foodTypes.filter(ft => selectedIds.includes(ft.id));
+    
+    // Tìm Max của các Min và Min của các Max
+    let minT = Math.max(...selectedFoods.map(f => f.minTemp));
+    let maxT = Math.min(...selectedFoods.map(f => f.maxTemp));
+    let minH = Math.max(...selectedFoods.map(f => f.minHumidity));
+    let maxH = Math.min(...selectedFoods.map(f => f.maxHumidity));
+
+    // Xung đột xảy ra khi dải Min lớn hơn dải Max (không có điểm chung)
+    return { 
+      minT, maxT, minH, maxH, 
+      conflict: minT > maxT || minH > maxH 
+    };
   };
 
   const toggleFoodType = (id: string) => {
+    const nextIds = formData.foodTypeIds.includes(id)
+      ? formData.foodTypeIds.filter(fid => fid !== id)
+      : [...formData.foodTypeIds, id];
+
+    const result = calculateThresholds(nextIds);
+    
+    // Cập nhật trạng thái lỗi ngay lập tức khi người dùng chọn
+    if (result.conflict) {
+      setError("Vi phạm ngưỡng: Các thực phẩm chọn không có dải nhiệt độ/độ ẩm chung!");
+    } else {
+      setError(null);
+    }
+
     setFormData(prev => ({
       ...prev,
-      foodTypeIds: prev.foodTypeIds.includes(id)
-        ? prev.foodTypeIds.filter(fid => fid !== id)
-        : [...prev.foodTypeIds, id]
+      foodTypeIds: nextIds,
+      minTemp: result.minT,
+      maxTemp: result.maxT,
+      minHumidity: result.minH,
+      maxHumidity: result.maxH,
+      // Đề xuất giá trị hiện tại bằng mức tối thiểu an toàn
+      currentTemp: prev.currentTemp === 0 ? result.minT : prev.currentTemp,
+      currentHumidity: prev.currentHumidity === 0 ? result.minH : prev.currentHumidity
     }));
-  };
-
-  const handleDelete = (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa khu vực này?')) {
-      store.deleteArea(id);
-      setAreas(store.getAreas());
-    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingArea) {
-      store.updateArea(editingArea.id, formData);
-    } else {
-      store.addArea(formData);
+
+    // KIỂM TRA LẠI TRƯỚC KHI LƯU - CHẶN TUYỆT ĐỐI
+    const finalCheck = calculateThresholds(formData.foodTypeIds);
+    if (finalCheck.conflict) {
+      setError("Vi phạm ngưỡng: Không thể tạo khu vực với các thực phẩm xung đột!");
+      return; // Dừng hàm, không cho lưu
     }
+
+    if (formData.foodTypeIds.length === 0) {
+      alert("Vui lòng chọn ít nhất một loại thực phẩm.");
+      return;
+    }
+
+    if (editingArea) store.updateArea(editingArea.id, formData);
+    else store.addArea(formData);
+    
     setAreas(store.getAreas());
     setShowModal(false);
   };
 
   return (
     <div className="p-8 space-y-6">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Quản lý khu vực</h1>
-          <p className="text-gray-500">Quản lý các khu vực lưu trữ thực phẩm</p>
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý khu vực</h1>
+          <p className="text-gray-500 font-medium">Cấu hình khu vực dựa trên quy chuẩn thực phẩm</p>
         </div>
-        <button
-          onClick={handleAdd}
-          className="flex items-center gap-2 bg-[#2ECC71] text-white px-4 py-2 rounded-lg hover:bg-[#27AE60] transition-colors"
+        <button 
+          onClick={() => { setEditingArea(null); setShowModal(true); setError(null); }} 
+          className="bg-[#2ECC71] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[#27AE60] transition-all"
         >
-          <Plus className="w-5 h-5" />
-          Thêm khu vực
+          <Plus className="w-5 h-5"/> Thêm khu vực
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Tên khu vực</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Kho</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Loại thực phẩm</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Người vận hành</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Nhiệt độ</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Độ ẩm</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Trạng thái</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {areas.map(area => {
-              const operator = users.find(u => u.id === area.operatorId);
-              const warehouse = warehouses.find(w => w.id === area.warehouseId);
-              const areaFoodTypes = area.foodTypeIds.map(id => foodTypes.find(ft => ft.id === id)).filter(ft => ft);
-              return (
-                <tr key={area.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-900">{area.name}</td>
-                  <td className="px-6 py-4 text-gray-600">{warehouse?.name}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-1 flex-wrap">
-                      {areaFoodTypes.map(ft => (
-                        <span key={ft!.id} className="inline-flex px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                          {ft!.name}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-gray-600">{operator?.fullName || 'Chưa phân công'}</td>
-                  <td className="px-6 py-4">
-                    <span className="text-gray-900">{area.currentTemp}°C</span>
-                    <span className="text-xs text-gray-500 ml-1">({area.minTemp}~{area.maxTemp}°C)</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-gray-900">{area.currentHumidity}%</span>
-                    <span className="text-xs text-gray-500 ml-1">({area.minHumidity}~{area.maxHumidity}%)</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex px-2 py-1 rounded-full text-xs ${
-                      area.status === 'normal' ? 'bg-green-100 text-green-700' :
-                      area.status === 'warning' ? 'bg-orange-100 text-orange-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {area.status === 'normal' ? 'Bình thường' : area.status === 'warning' ? 'Cảnh báo' : 'Nguy hiểm'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleEdit(area)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(area.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-100">
-              <h2 className="text-xl font-semibold text-gray-900">
-                {editingArea ? 'Chỉnh sửa khu vực' : 'Thêm khu vực mới'}
-              </h2>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-xl font-bold text-gray-900">{editingArea ? 'Cập nhật' : 'Thành lập'} khu vực mới</h2>
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-100"><X/></button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Tên khu vực</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Kho lạnh</label>
-                  <select
-                    value={formData.warehouseId}
-                    onChange={(e) => setFormData({ ...formData, warehouseId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  >
-                    <option value="">Chọn kho</option>
-                    {warehouses.map(w => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
-                    ))}
-                  </select>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto">
+              {/* Alert Lỗi - Hiển thị cả tên thực phẩm gây lỗi nếu cần */}
+              {error && (
+                <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex flex-col gap-2 animate-shake">
+                  <div className="flex items-center gap-2 font-bold uppercase text-xs tracking-wider">
+                    <AlertCircle className="w-4 h-4"/>
+                    {error}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Loại khu vực</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                  >
-                    <option value="vegetable">Rau củ</option>
-                    <option value="meat">Thịt cá</option>
-                  </select>
+              )}
+
+              {/* Lựa chọn thực phẩm */}
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-gray-700 ml-1">Loại thực phẩm trong khu vực</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {foodTypes.map(ft => {
+                    const isSelected = formData.foodTypeIds.includes(ft.id);
+                    return (
+                      <button
+                        key={ft.id} type="button" onClick={() => toggleFoodType(ft.id)}
+                        className={`p-4 rounded-2xl border-2 text-left transition-all relative ${
+                          isSelected ? 'border-[#2ECC71] bg-green-50/50' : 'border-gray-100 bg-white hover:border-gray-200'
+                        }`}
+                      >
+                        <p className={`font-bold ${isSelected ? 'text-[#2ECC71]' : 'text-gray-700'}`}>{ft.name}</p>
+                        <div className="flex flex-col text-[11px] text-gray-400 mt-1 space-y-0.5">
+                          <span className="flex items-center gap-1 font-semibold"><Thermometer className="w-3 h-3 text-red-400"/> {ft.minTemp}~{ft.maxTemp}°C</span>
+                          <span className="flex items-center gap-1 font-semibold"><Droplets className="w-3 h-3 text-blue-400"/> {ft.minHumidity}~{ft.maxHumidity}%</span>
+                        </div>
+                        {isSelected && <div className="absolute top-3 right-3 w-2 h-2 bg-[#2ECC71] rounded-full"></div>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Loại thực phẩm</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {foodTypes.map(ft => (
-                    <button
-                      key={ft.id}
-                      type="button"
-                      onClick={() => toggleFoodType(ft.id)}
-                      className={`p-3 rounded-lg border-2 text-left transition-colors ${
-                        formData.foodTypeIds.includes(ft.id)
-                          ? 'border-[#2ECC71] bg-green-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <p className="text-sm font-medium text-gray-900">{ft.name}</p>
-                      <p className="text-xs text-gray-500">{ft.minTemp}~{ft.maxTemp}°C</p>
-                    </button>
-                  ))}
+
+              {/* Ngưỡng Tự động - Chỉ xem, không cho sửa */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 bg-gray-50/50 p-5 rounded-2xl border border-gray-100 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-red-400 opacity-30"></div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Min Temp</label>
+                    <div className="px-4 py-2.5 bg-white border border-gray-100 rounded-xl font-black text-red-500 shadow-sm">{formData.minTemp}°C</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Max Temp</label>
+                    <div className="px-4 py-2.5 bg-white border border-gray-100 rounded-xl font-black text-red-500 shadow-sm">{formData.maxTemp}°C</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#2ECC71] uppercase">Hiện tại (°C)</label>
+                    <input 
+                      type="number" 
+                      value={formData.currentTemp} 
+                      onChange={(e) => setFormData({...formData, currentTemp: Number(e.target.value)})} 
+                      className="w-full px-4 py-2 bg-white border-2 border-[#2ECC71] rounded-xl font-black text-[#2ECC71] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 bg-gray-50/50 p-5 rounded-2xl border border-gray-100 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-400 opacity-30"></div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Min Humid</label>
+                    <div className="px-4 py-2.5 bg-white border border-gray-100 rounded-xl font-black text-blue-500 shadow-sm">{formData.minHumidity}%</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Max Humid</label>
+                    <div className="px-4 py-2.5 bg-white border border-gray-100 rounded-xl font-black text-blue-500 shadow-sm">{formData.maxHumidity}%</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#2ECC71] uppercase">Hiện tại (%)</label>
+                    <input 
+                      type="number" 
+                      value={formData.currentHumidity} 
+                      onChange={(e) => setFormData({...formData, currentHumidity: Number(e.target.value)})} 
+                      className="w-full px-4 py-2 bg-white border-2 border-[#2ECC71] rounded-xl font-black text-[#2ECC71] outline-none"
+                    />
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Người vận hành</label>
-                <select
-                  value={formData.operatorId}
-                  onChange={(e) => setFormData({ ...formData, operatorId: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+
+              {/* Nút bấm điều hướng */}
+              <div className="flex justify-end gap-3 pt-6 border-t">
+                <button type="button" onClick={() => setShowModal(false)} className="px-6 py-3 font-bold text-gray-400 hover:text-gray-600">Hủy</button>
+                <button 
+                  type="submit" 
+                  disabled={!!error || formData.foodTypeIds.length === 0}
+                  className={`px-10 py-3 rounded-2xl font-bold transition-all shadow-lg ${
+                    (error || formData.foodTypeIds.length === 0) 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none' 
+                    : 'bg-[#2ECC71] text-white hover:bg-[#27AE60] active:scale-95 shadow-green-100'
+                  }`}
                 >
-                  <option value="">Chưa phân công</option>
-                  {users.map(user => (
-                    <option key={user.id} value={user.id}>{user.fullName}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nhiệt độ tối thiểu (°C)</label>
-                  <input
-                    type="number"
-                    value={formData.minTemp}
-                    onChange={(e) => setFormData({ ...formData, minTemp: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nhiệt độ tối đa (°C)</label>
-                  <input
-                    type="number"
-                    value={formData.maxTemp}
-                    onChange={(e) => setFormData({ ...formData, maxTemp: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nhiệt độ hiện tại (°C)</label>
-                  <input
-                    type="number"
-                    value={formData.currentTemp}
-                    onChange={(e) => setFormData({ ...formData, currentTemp: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Độ ẩm tối thiểu (%)</label>
-                  <input
-                    type="number"
-                    value={formData.minHumidity}
-                    onChange={(e) => setFormData({ ...formData, minHumidity: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Độ ẩm tối đa (%)</label>
-                  <input
-                    type="number"
-                    value={formData.maxHumidity}
-                    onChange={(e) => setFormData({ ...formData, maxHumidity: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Độ ẩm hiện tại (%)</label>
-                  <input
-                    type="number"
-                    value={formData.currentHumidity}
-                    onChange={(e) => setFormData({ ...formData, currentHumidity: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#2ECC71] text-white rounded-lg hover:bg-[#27AE60]"
-                >
-                  {editingArea ? 'Cập nhật' : 'Thêm mới'}
+                  Xác nhận thiết lập
                 </button>
               </div>
             </form>

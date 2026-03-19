@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router';
-import { LayoutDashboard, Warehouse, Calendar, Bell, FileText, Users, User, LogOut } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Calendar, Bell, FileText, Users, User, LogOut, Apple, ClipboardList } from 'lucide-react';
 import { store } from '../store';
 
 export function Sidebar() {
@@ -14,7 +14,9 @@ export function Sidebar() {
   const menuItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
     { path: '/warehouses', icon: Warehouse, label: 'Kho lạnh' },
+    { path: '/foods', icon: Apple, label: 'Thực phẩm' },
     { path: '/schedules', icon: Calendar, label: 'Lịch trình' },
+    { path: '/logs', icon: ClipboardList, label: 'Nhật ký' },
     { path: '/alerts', icon: Bell, label: 'Cảnh báo' },
     { path: '/reports', icon: FileText, label: 'Báo cáo' },
     { path: '/users', icon: Users, label: 'Người dùng', adminOnly: true },

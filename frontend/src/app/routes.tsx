@@ -3,6 +3,8 @@ import { RootLayout } from './layouts/RootLayout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WarehousesPage } from './pages/WarehousesPage';
+import { FoodsPage } from './pages/FoodsPage';
+import { LogsPage } from './pages/LogsPage';
 import { WarehouseDetailPage } from './pages/WarehouseDetailPage';
 import { AreaDetailPage } from './pages/AreaDetailPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
@@ -56,6 +58,14 @@ export const router = createBrowserRouter([
       {
         path: 'warehouses',
         element: <WarehousesPage />
+      },
+      {
+        path: 'foods',
+        element: <FoodsPage />
+      },
+      {
+        path: 'logs',
+        element: <LogsPage />
       },
       {
         path: 'warehouses/:warehouseId',

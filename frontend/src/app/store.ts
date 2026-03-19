@@ -24,13 +24,10 @@ class AppStore {
   ];
 
   private foodTypes: FoodType[] = [
-    { id: 'ft1', name: 'Rau lá xanh', minTemp: 0, maxTemp: 5, minHumidity: 95, maxHumidity: 100, description: 'Rau xà lách, cải bó xôi' },
-    { id: 'ft2', name: 'Rau củ quả', minTemp: 7, maxTemp: 13, minHumidity: 85, maxHumidity: 95, description: 'Cà chua, dưa chuột, ớt' },
-    { id: 'ft3', name: 'Củ', minTemp: 5, maxTemp: 10, minHumidity: 80, maxHumidity: 90, description: 'Khoai tây, cà rốt, củ cải' },
-    { id: 'ft4', name: 'Thịt tươi', minTemp: -2, maxTemp: 2, minHumidity: 80, maxHumidity: 85, description: 'Thịt bò, thịt lợn, gà' },
-    { id: 'ft5', name: 'Cá tươi', minTemp: -1, maxTemp: 1, minHumidity: 90, maxHumidity: 95, description: 'Cá biển, cá nước ngọt' },
-    { id: 'ft6', name: 'Hải sản', minTemp: 0, maxTemp: 2, minHumidity: 85, maxHumidity: 90, description: 'Tôm, mực, sò' },
-  ];
+    { id: 'ft1', name: 'Hải sản đông lạnh', minTemp: -25, maxTemp: -18, minHumidity: 85, maxHumidity: 95, description: 'Rau xà lách, cải bó xôi' },
+    { id: 'ft2', name: 'Thịt bò tươi', minTemp: 0, maxTemp: 7, minHumidity: 80, maxHumidity: 90, description: 'Cà chua, dưa chuột, ớt' },
+    { id: 'ft3', name: 'Rau củ quả', minTemp: 2, maxTemp: 5, minHumidity: 90, maxHumidity: 100, description: 'Khoai tây, cà rốt, củ cải' },
+    ];
 
   private warehouses: Warehouse[] = [
     {
@@ -262,7 +259,19 @@ class AppStore {
     }
     return false;
   }
+  getAllDeviceLogs(): DeviceLog[] {
+    return [...this.deviceLogs].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
 
+  getDeviceLogs(deviceId: string) {
+    return this.deviceLogs.filter(log => log.deviceId === deviceId).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+
+  addDeviceLog(log: Omit<DeviceLog, 'id'>) {
+    const newLog = { ...log, id: `log${Date.now()}` };
+    this.deviceLogs.push(newLog);
+    return newLog;
+  }
   getAlerts(): Alert[] {
     return [...this.alerts].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }
