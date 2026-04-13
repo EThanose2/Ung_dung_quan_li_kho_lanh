@@ -28,7 +28,7 @@ import { MqttModule } from './mqtt/mqtt.module';
       host: 'localhost',
       port: 3306,
       username: 'root',
-      password: '',
+      password: '@Kv240105',
       database: 'freshguard',
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: false, // Tự động tạo bảng DB

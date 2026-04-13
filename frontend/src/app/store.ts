@@ -57,8 +57,8 @@ class AppStore {
   private areas: Area[] = [
     {
       id: '1',
-      name: 'Khu vực lưu trữ Rau củ',
-      warehouseId: 'w1',
+      name: 'Khu đồ Tươi',
+      warehouseId: 'w2',
       type: 'vegetable',
       operatorId: '2',
       foodTypeIds: ['ft2', 'ft3'],
@@ -73,8 +73,8 @@ class AppStore {
     },
     {
       id: '2',
-      name: 'Khu vực lưu trữ Thịt cá',
-      warehouseId: 'w1',
+      name: 'Khu đồ Đông',
+      warehouseId: 'w2',
       type: 'meat',
       operatorId: '2',
       foodTypeIds: ['ft4', 'ft5'],
@@ -263,15 +263,6 @@ class AppStore {
     return [...this.deviceLogs].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }
 
-  getDeviceLogs(deviceId: string) {
-    return this.deviceLogs.filter(log => log.deviceId === deviceId).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-  }
-
-  addDeviceLog(log: Omit<DeviceLog, 'id'>) {
-    const newLog = { ...log, id: `log${Date.now()}` };
-    this.deviceLogs.push(newLog);
-    return newLog;
-  }
   getAlerts(): Alert[] {
     return [...this.alerts].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }

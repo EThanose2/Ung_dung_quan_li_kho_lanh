@@ -104,3 +104,82 @@ export interface EnvironmentData {
   temperature: number;
   humidity: number;
 }
+
+/////////////////////////////////////////
+
+export interface DashboardDeviceApi {
+  id: number;
+  device_code: string;
+  device_name: string;
+  adafruit_feed_key: string;
+  device_type: "TEMP" | "HUMI" | "BRIGHT" | "CO2_SENSOR" | "EMERGENCY_BTN" | "DOOR_SENSOR" | "ACTUATOR" | "COOLING" | "FAN" | "LIGHT";
+  status: string; // e.g., "ONLINE", "OFF", "RED_BLINK"
+}
+
+export interface DashboardAreaApi {
+  id: number;
+  area_name: string;
+  auto_door_timeout_sec: number;
+  manual_override_mins: number;
+  current_food_type: {
+    id: number;
+    food_name: string;
+    min_temp: number;
+    max_temp: number;
+    min_humi: number;
+    max_humi: number;
+  } | null;
+  devices: DashboardDeviceApi[];
+}
+
+export interface WarehouseApiArea {
+  id: number;
+  area_name: string;
+  auto_door_timeout_sec: number;
+  manual_override_mins: number;
+
+  operating_mode?: string;
+
+  current_food_type: {
+    id: number;
+    food_name: string;
+    min_temp: number;
+    max_temp: number;
+    min_humi: number;
+    max_humi: number;
+  } | null;
+
+  devices: DashboardDeviceApi[];
+}
+
+export interface WarehouseApi {
+  id: number;
+  warehouse_name: string;
+  areas: WarehouseApiArea[];
+}
+
+export interface DashboardApiResponse {
+  status: string;
+  data: DashboardAreaApi[];
+}
+
+export interface FoodTypeApi {
+  id: number;
+  food_name: string;
+  min_temp: number;
+  max_temp: number;
+}
+
+export interface SensorHistoryRecord {
+  id: number;
+  sensor_type: string;
+  reading_value: number;
+  recorded_at: string;
+}
+
+export interface LiveSensorDataPayload {
+  khu_vuc: string;
+  thiet_bi: string;
+  loai_cam_bien: string;
+  gia_tri: string;
+}
