@@ -21,7 +21,7 @@ export class AuthService {
     }
 
     // Thực tế sẽ dùng bcrypt check password ở đây. Đồ án thì check nhanh:
-    // if (user.password !== password) throw new HttpException('Sai mật khẩu!', HttpStatus.UNAUTHORIZED);
+    if (user.password !== password) throw new HttpException('Sai mật khẩu!', HttpStatus.UNAUTHORIZED);
 
     // Ghi log người dùng đăng nhập
     await this.actionLogRepo.save(

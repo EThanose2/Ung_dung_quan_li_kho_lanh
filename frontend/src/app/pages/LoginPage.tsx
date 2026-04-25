@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Lock, User } from 'lucide-react';
-import { store } from '../store';
+import { loginApi } from '../api/auth';
 
 export function LoginPage() {
   const [username, setUsername] = useState('');
@@ -9,14 +9,17 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const user = store.login(username, password);
-    if (user) {
+    try{
+      const response = await loginApi(username, password);
+      const user = response.data;
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("role", user.role);
       navigate('/dashboard');
-    } else {
+    } catch (err: any){
       setError('Tên đăng nhập hoặc mật khẩu không chính xác');
     }
   };
@@ -81,12 +84,6 @@ export function LoginPage() {
               Đăng nhập
             </button>
           </form>
-
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-xs text-gray-500 mb-2">Tài khoản demo:</p>
-            <p className="text-xs text-gray-700">Admin: admin / admin123</p>
-            <p className="text-xs text-gray-700">Operator: operator1 / operator123</p>
-          </div>
         </div>
       </div>
     </div>

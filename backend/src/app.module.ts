@@ -17,7 +17,7 @@ import { TelemetryModule } from './telemetry/telemetry.module';
       host: 'localhost',
       port: 3306,
       username: 'root',
-      password: '',
+      password: 'Nhi14032304@',
       database: 'freshguard',
       // Tự động quét hết tất cả Entity trong các folder
       entities: [__dirname + '/**/*.entity{.ts,.js}'],

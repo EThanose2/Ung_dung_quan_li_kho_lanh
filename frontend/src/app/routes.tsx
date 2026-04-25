@@ -13,10 +13,10 @@ import { AlertsPage } from './pages/AlertsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { UsersPage } from './pages/UsersPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { store } from './store';
+
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const user = store.getCurrentUser();
+  const user = localStorage.getItem("user");
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -24,7 +24,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const user = store.getCurrentUser();
+  const user = localStorage.getItem("user");
   if (!user) {
     return <Navigate to="/login" replace />;
   }
