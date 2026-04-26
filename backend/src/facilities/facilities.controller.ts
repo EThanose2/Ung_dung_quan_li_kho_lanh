@@ -16,14 +16,17 @@ import { FoodType } from '../entities/food-type.entity';
 export class FacilitiesController {
   constructor(private readonly facilitiesService: FacilitiesService) {}
 
-  // ---- WAREHOUSE ----
-  @Post('facilities/warehouses')
-  async createWarehouse(@Body() body: Partial<Warehouse>) {
+  // ==================== WAREHOUSE CRUD ====================
+
+  @Get('warehouses')
+  async getAllWarehouses() {
     return {
       status: 'success',
-      data: await this.facilitiesService.createWarehouse(body),
+      data: await this.facilitiesService.getAllWarehouses(),
     };
   }
+
+  // ⚠️ Phải đặt TRƯỚC :id để tránh nhầm 'dashboard' thành id
   @Get('warehouses/dashboard')
   async getDashboard() {
     return {
@@ -32,7 +35,41 @@ export class FacilitiesController {
     };
   }
 
-  // ---- AREA ----
+  @Get('warehouses/:id')
+  async getWarehouseById(@Param('id') id: number) {
+    return {
+      status: 'success',
+      data: await this.facilitiesService.getWarehouseById(id),
+    };
+  }
+
+  @Post('warehouses')
+  async createWarehouse(@Body() body: Partial<Warehouse>) {
+    return {
+      status: 'success',
+      data: await this.facilitiesService.createWarehouse(body),
+    };
+  }
+
+  @Put('warehouses/:id')
+  async updateWarehouse(
+    @Param('id') id: number,
+    @Body() body: Partial<Warehouse>,
+  ) {
+    return {
+      status: 'success',
+      data: await this.facilitiesService.updateWarehouse(id, body),
+    };
+  }
+
+  @Delete('warehouses/:id')
+  async deleteWarehouse(@Param('id') id: number) {
+    await this.facilitiesService.deleteWarehouse(id);
+    return { status: 'success', message: 'Đã xóa kho lạnh' };
+  }
+
+  // ==================== AREA ====================
+
   @Get('areas')
   async getAllAreas() {
     return {
@@ -40,6 +77,7 @@ export class FacilitiesController {
       data: await this.facilitiesService.getAllAreas(),
     };
   }
+
   @Post('areas')
   async createArea(@Body() body: Partial<Area>) {
     return {
@@ -47,16 +85,19 @@ export class FacilitiesController {
       data: await this.facilitiesService.createArea(body),
     };
   }
+
   @Delete('areas/:id')
   async deleteArea(@Param('id') id: number) {
     await this.facilitiesService.deleteArea(id);
     return { status: 'success', message: 'Đã xóa khu vực' };
   }
+
   @Put('areas/:id/settings')
   async updateAreaSettings(@Param('id') id: number, @Body() body: any) {
     const data = await this.facilitiesService.updateAreaSettings(id, body);
     return { status: 'success', message: 'Đã cập nhật Khu vực!', data };
   }
+
   @Post('areas/:id/assign-operator')
   async assignOperator(
     @Param('id') areaId: number,
@@ -69,7 +110,8 @@ export class FacilitiesController {
     };
   }
 
-  // ---- FOOD TYPES ----
+  // ==================== FOOD TYPES ====================
+
   @Get('food-types')
   async getFoodTypes() {
     return {
@@ -77,6 +119,7 @@ export class FacilitiesController {
       data: await this.facilitiesService.getAllFoodTypes(),
     };
   }
+
   @Post('food-types')
   async createFoodType(@Body() body: Partial<FoodType>) {
     return {
@@ -84,6 +127,7 @@ export class FacilitiesController {
       data: await this.facilitiesService.createFoodType(body),
     };
   }
+
   @Put('food-types/:id')
   async updateFoodType(
     @Param('id') id: number,
@@ -92,6 +136,7 @@ export class FacilitiesController {
     await this.facilitiesService.updateFoodType(id, body);
     return { status: 'success', message: 'Đã cập nhật quy tắc bảo quản' };
   }
+
   @Delete('food-types/:id')
   async deleteFoodType(@Param('id') id: number) {
     await this.facilitiesService.deleteFoodType(id);

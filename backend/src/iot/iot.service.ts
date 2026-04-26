@@ -117,4 +117,14 @@ export class IotService {
   async getAllSchedules() {
     return await this.scheduleRepo.find({ relations: ['device'] });
   }
+  async updateSchedule(id: number, body: any) {
+    // Tìm lịch trình theo ID và cập nhật
+    await this.scheduleRepo.update(id, body);
+    return await this.scheduleRepo.findOneBy({ id });
+  }
+
+  async removeSchedule(id: number) {
+    // Xóa lịch trình theo ID
+    return await this.scheduleRepo.delete(id);
+  }
 }

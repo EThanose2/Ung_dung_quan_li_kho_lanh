@@ -98,13 +98,20 @@ export function updateProfile(id: number, body: { full_name?: string; password?:
 // ================================================================
 // WAREHOUSES
 // ================================================================
-export function getWarehouses() {
-  return axiosClient.get<{ status: string; data: WarehouseApi[] }>("/warehouses");
-}
-
-export function createWarehouse(body: { warehouse_name: string }) {
-  return axiosClient.post<{ status: string; data: WarehouseApi }>("/facilities/warehouses", body);
-}
+export const getWarehouses = () =>
+  axiosClient.get<{ status: string; data: WarehouseApi[] }>("/warehouses");
+ 
+export const getWarehouseById = (id: number) =>
+  axiosClient.get<{ status: string; data: WarehouseApi }>(`/warehouses/${id}`);
+ 
+export const createWarehouse = (body: { warehouse_name: string }) =>
+  axiosClient.post<{ status: string; data: WarehouseApi }>("/warehouses", body);
+ 
+export const updateWarehouse = (id: number, body: { warehouse_name: string }) =>
+  axiosClient.put<{ status: string; data: WarehouseApi }>(`/warehouses/${id}`, body);
+ 
+export const deleteWarehouse = (id: number) =>
+  axiosClient.delete<{ status: string; message: string }>(`/warehouses/${id}`);
 
 // ================================================================
 // AREAS
@@ -243,4 +250,12 @@ export function createSchedule(body: {
   device: { id: number };
 }) {
   return axiosClient.post<{ status: string; data: ScheduleApi }>("/devices/schedules", body);
+}
+
+export function updateSchedule(id: number, body: Partial<{ action: string; start_time: string; end_time: string; is_active: boolean }>) {
+  return axiosClient.put<{ status: string; data: ScheduleApi }>(`/devices/schedules/${id}`, body);
+}
+ 
+export function deleteSchedule(id: number) {
+  return axiosClient.delete<{ status: string }>(`/devices/schedules/${id}`);
 }

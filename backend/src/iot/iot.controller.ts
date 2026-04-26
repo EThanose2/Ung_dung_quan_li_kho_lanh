@@ -12,6 +12,7 @@ import { Device } from '../entities/device.entity';
 
 @Controller('api/devices')
 export class IotController {
+  
   constructor(private readonly iotService: IotService) {}
 
   @Get()
@@ -60,5 +61,19 @@ export class IotController {
   @Get('schedules')
   async getSchedules() {
     return { status: 'success', data: await this.iotService.getAllSchedules() };
+  }
+
+  // Cập nhật lịch trình theo ID
+  @Put('schedules/:id')
+  async updateSchedule(@Param('id') id: number, @Body() body: any) {
+    const data = await this.iotService.updateSchedule(id, body);
+    return { status: 'success', message: 'Cập nhật lịch thành công!', data };
+  }
+
+  // Xóa lịch trình theo ID
+  @Delete('schedules/:id')
+  async deleteSchedule(@Param('id') id: number) {
+    await this.iotService.removeSchedule(id);
+    return { status: 'success', message: 'Đã xóa lịch trình!' };
   }
 }
