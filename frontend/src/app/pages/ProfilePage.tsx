@@ -1,53 +1,71 @@
+// src/pages/ProfilePage.tsx
 import { useState } from 'react';
-import { User as UserIcon, Mail, Lock, Save } from 'lucide-react';
-import { store } from '../store';
+import { User as UserIcon, Lock, Save } from 'lucide-react';
+import { updateProfile, UserApi } from '../api/apiService';
 
 export function ProfilePage() {
-  const currentUser = store.getCurrentUser();
+  const currentUser: UserApi | null = JSON.parse(localStorage.getItem('current_user') || 'null');
+
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [infoData, setInfoData] = useState({
-    fullName: currentUser?.fullName || '',
-    email: currentUser?.email || ''
+    full_name: currentUser?.full_name || '',
   });
 
   const [passwordData, setPasswordData] = useState({
-    currentPassword: '',
     newPassword: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
 
-  const handleSaveInfo = (e: React.FormEvent) => {
+  if (!currentUser) {
+    return <div className="p-8 text-gray-500">Chưa đăng nhập</div>;
+  }
+
+  const handleSaveInfo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentUser) {
-      store.updateUser(currentUser.id, infoData);
+    setSaving(true);
+    try {
+      await updateProfile(currentUser.id, { full_name: infoData.full_name });
+      // Cập nhật localStorage
+      const updated = { ...currentUser, full_name: infoData.full_name };
+      localStorage.setItem('current_user', JSON.stringify(updated));
       setIsEditingInfo(false);
       alert('Cập nhật thông tin thành công!');
+    } catch (err) {
+      console.error('Lỗi cập nhật profile:', err);
+      alert('Cập nhật thất bại!');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordData.currentPassword !== currentUser?.password) {
-      alert('Mật khẩu hiện tại không đúng!');
-      return;
-    }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       alert('Mật khẩu xác nhận không khớp!');
       return;
     }
-    if (currentUser) {
-      store.updateUser(currentUser.id, { password: passwordData.newPassword });
+    setSaving(true);
+    try {
+      await updateProfile(currentUser.id, { password: passwordData.newPassword });
       setIsChangingPassword(false);
-      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordData({ newPassword: '', confirmPassword: '' });
       alert('Đổi mật khẩu thành công!');
+    } catch (err) {
+      console.error('Lỗi đổi mật khẩu:', err);
+      alert('Đổi mật khẩu thất bại!');
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (!currentUser) {
-    return <div className="p-8">Chưa đăng nhập</div>;
-  }
+  const initials = currentUser.full_name
+    ?.split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase() || currentUser.username[0].toUpperCase();
 
   return (
     <div className="p-8 space-y-6">
@@ -58,14 +76,12 @@ export function ProfilePage() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 space-y-6">
+          {/* Thông tin cá nhân */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex justify-between items-center mb-6">
               <h2 className="font-semibold text-gray-900">Thông tin cá nhân</h2>
               {!isEditingInfo && (
-                <button
-                  onClick={() => setIsEditingInfo(true)}
-                  className="px-4 py-2 text-[#2ECC71] hover:bg-green-50 rounded-lg transition-colors"
-                >
+                <button onClick={() => setIsEditingInfo(true)} className="px-4 py-2 text-[#2ECC71] hover:bg-green-50 rounded-lg transition-colors">
                   Chỉnh sửa
                 </button>
               )}
@@ -77,36 +93,17 @@ export function ProfilePage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Họ tên</label>
                   <input
                     type="text"
-                    value={infoData.fullName}
-                    onChange={(e) => setInfoData({ ...infoData, fullName: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                  <input
-                    type="email"
-                    value={infoData.email}
-                    onChange={(e) => setInfoData({ ...infoData, email: e.target.value })}
+                    value={infoData.full_name}
+                    onChange={(e) => setInfoData({ full_name: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
                     required
                   />
                 </div>
                 <div className="flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingInfo(false)}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex items-center gap-2 px-4 py-2 bg-[#2ECC71] text-white rounded-lg hover:bg-[#27AE60]"
-                  >
+                  <button type="button" onClick={() => setIsEditingInfo(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Hủy</button>
+                  <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-[#2ECC71] text-white rounded-lg hover:bg-[#27AE60] disabled:opacity-50">
                     <Save className="w-4 h-4" />
-                    Lưu thay đổi
+                    {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
                   </button>
                 </div>
               </form>
@@ -116,28 +113,26 @@ export function ProfilePage() {
                   <UserIcon className="w-5 h-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-500">Họ tên</p>
-                    <p className="font-medium text-gray-900">{currentUser.fullName}</p>
+                    <p className="font-medium text-gray-900">{currentUser.full_name || '(chưa cập nhật)'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                  <Mail className="w-5 h-5 text-gray-400" />
+                  <UserIcon className="w-5 h-5 text-gray-400" />
                   <div>
-                    <p className="text-sm text-gray-500">Email</p>
-                    <p className="font-medium text-gray-900">{currentUser.email}</p>
+                    <p className="text-sm text-gray-500">Tên đăng nhập</p>
+                    <p className="font-medium text-gray-900">{currentUser.username}</p>
                   </div>
                 </div>
               </div>
             )}
           </div>
 
+          {/* Đổi mật khẩu */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex justify-between items-center mb-6">
               <h2 className="font-semibold text-gray-900">Đổi mật khẩu</h2>
               {!isChangingPassword && (
-                <button
-                  onClick={() => setIsChangingPassword(true)}
-                  className="px-4 py-2 text-[#2ECC71] hover:bg-green-50 rounded-lg transition-colors"
-                >
+                <button onClick={() => setIsChangingPassword(true)} className="px-4 py-2 text-[#2ECC71] hover:bg-green-50 rounded-lg transition-colors">
                   Đổi mật khẩu
                 </button>
               )}
@@ -145,16 +140,6 @@ export function ProfilePage() {
 
             {isChangingPassword ? (
               <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Mật khẩu hiện tại</label>
-                  <input
-                    type="password"
-                    value={passwordData.currentPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                    required
-                  />
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Mật khẩu mới</label>
                   <input
@@ -176,19 +161,10 @@ export function ProfilePage() {
                   />
                 </div>
                 <div className="flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsChangingPassword(false)}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex items-center gap-2 px-4 py-2 bg-[#2ECC71] text-white rounded-lg hover:bg-[#27AE60]"
-                  >
+                  <button type="button" onClick={() => setIsChangingPassword(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Hủy</button>
+                  <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-[#2ECC71] text-white rounded-lg hover:bg-[#27AE60] disabled:opacity-50">
                     <Lock className="w-4 h-4" />
-                    Đổi mật khẩu
+                    {saving ? 'Đang lưu...' : 'Đổi mật khẩu'}
                   </button>
                 </div>
               </form>
@@ -198,35 +174,27 @@ export function ProfilePage() {
           </div>
         </div>
 
-        <div className="space-y-6">
+        {/* Card thông tin bên phải */}
+        <div>
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="text-center mb-4">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#2ECC71] to-[#27AE60] flex items-center justify-center mx-auto mb-3">
-                <span className="text-white font-bold text-2xl">
-                  {currentUser.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
-                </span>
+                <span className="text-white font-bold text-2xl">{initials}</span>
               </div>
-              <h3 className="font-semibold text-gray-900">{currentUser.fullName}</h3>
-              <p className="text-sm text-gray-500">{currentUser.email}</p>
+              <h3 className="font-semibold text-gray-900">{currentUser.full_name || currentUser.username}</h3>
             </div>
-            <div className="pt-4 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-2">
+            <div className="pt-4 border-t border-gray-100 space-y-2">
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Vai trò</span>
                 <span className={`px-2 py-1 rounded-full text-xs ${
-                  currentUser.role === 'Admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                  currentUser.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                 }`}>
                   {currentUser.role}
                 </span>
               </div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Tên đăng nhập</span>
                 <span className="text-sm font-medium text-gray-900">{currentUser.username}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Ngày tạo</span>
-                <span className="text-sm font-medium text-gray-900">
-                  {new Date(currentUser.createdAt).toLocaleDateString('vi-VN')}
-                </span>
               </div>
             </div>
           </div>

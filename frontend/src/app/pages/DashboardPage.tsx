@@ -1,337 +1,233 @@
-import React, { useMemo, useState } from "react";
+// src/pages/DashboardPage.tsx
+import React, { useMemo, useState, useEffect } from "react";
 import { Warehouse, MapPin, Cpu, Bell } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  PieChart,
-  Pie,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-
-import { useDashboard } from "../hooks/useDashboard";
-import { useSensorHistory } from "../hooks/useSensorHistory";
-import { store } from "../store";
-
+import { getWarehouses, getSensorHistory, WarehouseApi, AreaApi, DeviceApi, SensorReadingApi } from "../api/apiService";
 import { StatCard } from "../components/StatCard";
 import { AreaCard } from "../components/AreaCard";
-
-/* ================= COMPONENT ================= */
+import {
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
 
 export function DashboardPage() {
-  const { warehouses, areas, devices, loading } = useDashboard();
+  const [warehouses, setWarehouses] = useState<WarehouseApi[]>([]);
+  const [tempHistory, setTempHistory] = useState<SensorReadingApi[]>([]);
+  const [humiHistory, setHumiHistory] = useState<SensorReadingApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
 
-  const alerts = store.getAlerts().filter((a) => !a.acknowledged);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [whRes, tempRes, humiRes] = await Promise.all([
+          getWarehouses(),
+          getSensorHistory({ type: "TEMP", limit: 20 }),
+          getSensorHistory({ type: "HUMI", limit: 20 }),
+        ]);
+        setWarehouses(whRes.data.data);
+        setTempHistory(tempRes.data.data);
+        setHumiHistory(humiRes.data.data);
+      } catch (err) {
+        console.error("Lỗi API Dashboard:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState("all");
-  const [selectedRange, setSelectedRange] = useState<"day" | "week" | "month">(
-    "day",
-  );
+  const allAreas: AreaApi[] = warehouses.flatMap((w: WarehouseApi) => w.areas);
+  const allDevices: DeviceApi[] = allAreas.flatMap((a: AreaApi) => a.devices);
 
-  /* ================= FILTER AREAS ================= */
+  const filteredAreas: AreaApi[] = useMemo(() => {
+    if (selectedWarehouseId === "all") return allAreas;
+    return warehouses.find((w: WarehouseApi) => String(w.id) === selectedWarehouseId)?.areas ?? [];
+  }, [selectedWarehouseId, warehouses]);
 
-  const chartAreas = useMemo(() => {
-    if (selectedWarehouseId === "all") return areas;
-    return areas.filter((a) => a.warehouseId === selectedWarehouseId);
-  }, [areas, selectedWarehouseId]);
-
-  const areaIds = useMemo(() => chartAreas.map((a) => a.id), [chartAreas]);
-
-  const chartDevices = useMemo(
-    () => devices.filter((d) => areaIds.includes(d.areaId)),
-    [devices, areaIds],
-  );
-
-  const chartAlerts = useMemo(
-    () => alerts.filter((a) => areaIds.includes(a.areaId)),
-    [alerts, areaIds],
-  );
-
-  const activeDevices = chartDevices.filter(
-    (d) => d.status === "online",
+  const onlineDevices = allDevices.filter(
+    (d: DeviceApi) => d.status?.toUpperCase() === "ONLINE"
   ).length;
 
-  /* ================= SENSOR ================= */
+  const deviceData = [
+    { name: "Online", value: onlineDevices, fill: "#2ECC71" },
+    { name: "Offline", value: allDevices.length - onlineDevices, fill: "#E74C3C" },
+  ];
 
-  const { chartData } = useSensorHistory(areaIds, selectedRange);
+  const chartData = useMemo(() => {
+    const map: Record<string, { time: string; temperature?: number; humidity?: number }> = {};
 
-  /* ================= ALERT ================= */
-
-  const alertData = useMemo(() => {
-    const labels =
-      selectedRange === "day"
-        ? ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]
-        : selectedRange === "week"
-          ? ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
-          : ["Tuần 1", "Tuần 2", "Tuần 3", "Tuần 4"];
-
-    const getBucket = (date: Date) => {
-      if (selectedRange === "day")
-        return Math.min(5, Math.floor(date.getHours() / 4));
-      if (selectedRange === "week") return (date.getDay() + 6) % 7;
-      return Math.min(3, Math.floor((date.getDate() - 1) / 7));
-    };
-
-    const count = Array(labels.length).fill(0);
-
-    chartAlerts.forEach((a) => {
-      const idx = getBucket(new Date(a.timestamp));
-      count[idx]++;
+    tempHistory.forEach((r: SensorReadingApi) => {
+      const key = new Date(r.recorded_at).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      if (!map[key]) map[key] = { time: key };
+      map[key].temperature = r.reading_value;
     });
 
-    return labels.map((label, i) => ({
-      label,
-      value: count[i],
-    }));
-  }, [chartAlerts, selectedRange]);
+    humiHistory.forEach((r: SensorReadingApi) => {
+      const key = new Date(r.recorded_at).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      if (!map[key]) map[key] = { time: key };
+      map[key].humidity = r.reading_value;
+    });
 
-  /* ================= DEVICE ================= */
+    return Object.values(map).sort((a, b) => a.time.localeCompare(b.time));
+  }, [tempHistory, humiHistory]);
 
-  const deviceTypeNames: Record<string, string> = {
-    temperature: "Cảm biến nhiệt độ",
-    humidity: "Cảm biến độ ẩm",
-    cooling: "Máy lạnh",
-    fan: "Quạt",
-    light: "Đèn",
-  };
+  const energyData = [
+    { time: "T2", energy: 120 },
+    { time: "T3", energy: 150 },
+    { time: "T4", energy: 130 },
+    { time: "T5", energy: 170 },
+    { time: "T6", energy: 160 },
+    { time: "T7", energy: 90 },
+    { time: "CN", energy: 80 },
+  ];
 
-  const deviceColors: Record<string, string> = {
-    temperature: "#3b82f6",
-    humidity: "#8b5cf6",
-    cooling: "#06b6d4",
-    fan: "#14b8a6",
-    light: "#f59e0b",
-  };
-
-  const deviceData = useMemo(() => {
-    const types = ["temperature", "humidity", "cooling", "fan", "light"];
-
-    return types.map((t) => ({
-      name: deviceTypeNames[t],
-      value: chartDevices.filter((d) => d.type === t).length,
-      fill: deviceColors[t],
-    }));
-  }, [chartDevices]);
-
-  /* ================= ENERGY ================= */
-
-  const energyData = useMemo(() => {
-    const labels =
-      selectedRange === "day"
-        ? ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]
-        : selectedRange === "week"
-          ? ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
-          : ["Tuần 1", "Tuần 2", "Tuần 3", "Tuần 4"];
-
-    const weights: Record<string, number> = {
-      temperature: 0.05,
-      humidity: 0.05,
-      cooling: 1.8,
-      fan: 0.9,
-      light: 0.4,
-    };
-
-    const online = chartDevices.filter((d) => d.status === "online");
-
-    const base = Object.keys(weights).reduce((sum, type) => {
-      const c = online.filter((d) => d.type === type).length;
-      return sum + c * weights[type];
-    }, 0);
-
-    const baseKwh = base * 0.25;
-
-    const factors =
-      selectedRange === "day"
-        ? [0.85, 1.05, 0.95, 1.15, 1, 0.9]
-        : selectedRange === "week"
-          ? [0.92, 1.03, 1.01, 0.98, 1.06, 1.1, 0.97]
-          : [0.95, 1.02, 1.08, 0.99];
-
-    return labels.map((t, i) => ({
-      time: t,
-      energy: Number((baseKwh * (factors[i] ?? 1)).toFixed(2)),
-    }));
-  }, [chartDevices, selectedRange]);
-
-  /* ================= LOADING ================= */
-
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-screen">
+        <div className="text-gray-500">Đang tải dữ liệu...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 space-y-8 bg-gray-50 min-h-screen">
-      {/* HEADER */}
       <div>
         <h1 className="text-2xl font-bold">Tổng quan hệ thống</h1>
         <p className="text-gray-500">Giám sát kho lạnh & thiết bị realtime</p>
       </div>
 
-      {/* STATS (GIỮ NGUYÊN 100% NHƯ BẠN YÊU CẦU) */}
       <div className="grid grid-cols-4 gap-6">
-        <StatCard
-          icon={Warehouse}
-          label="Kho lạnh"
-          value={warehouses.length}
-          color="text-purple-600"
-          bgColor="bg-purple-100"
-        />
-        <StatCard
-          icon={MapPin}
-          label="Khu vực"
-          value={areas.length}
-          color="text-blue-600"
-          bgColor="bg-blue-100"
-        />
-        <StatCard
-          icon={Cpu}
-          label="Thiết bị online"
-          value={`${activeDevices}/${devices.length}`}
-          color="text-green-600"
-          bgColor="bg-green-100"
-        />
+        <StatCard icon={Warehouse} label="Kho lạnh" value={warehouses.length} color="text-purple-600" bgColor="bg-purple-100" />
+        <StatCard icon={MapPin} label="Khu vực" value={allAreas.length} color="text-blue-600" bgColor="bg-blue-100" />
+        <StatCard icon={Cpu} label="Thiết bị online" value={`${onlineDevices}/${allDevices.length}`} color="text-green-600" bgColor="bg-green-100" />
         <StatCard
           icon={Bell}
-          label="Cảnh báo"
-          value={alerts.length}
+          label="Chế độ tự động"
+          value={allAreas.filter((a: AreaApi) => a.operating_mode === "AUTO").length}
           color="text-orange-600"
           bgColor="bg-orange-100"
         />
       </div>
 
-      {/* FILTER */}
-      <div className="bg-white p-4 rounded-xl">
-        <div className="flex gap-4">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex gap-4 items-center">
+          <span className="text-sm font-medium text-gray-600">Lọc theo kho:</span>
           <select
             value={selectedWarehouseId}
             onChange={(e) => setSelectedWarehouseId(e.target.value)}
-            className="px-4 py-2 border rounded-lg"
+            className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
           >
             <option value="all">Tất cả kho</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
+            {warehouses.map((w: WarehouseApi) => (
+              <option key={w.id} value={String(w.id)}>{w.warehouse_name}</option>
             ))}
           </select>
-
-          {(["day", "week", "month"] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setSelectedRange(r)}
-              className={`px-4 py-2 rounded-lg ${
-                selectedRange === r ? "bg-green-500 text-white" : "bg-gray-200"
-              }`}
-            >
-              {r}
-            </button>
-          ))}
         </div>
       </div>
 
-      {/* AREAS */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">Khu vực</h2>
-        <div className="grid grid-cols-2 gap-6">
-          {chartAreas.map((a) => (
-            <AreaCard key={a.id} area={a} warehouseId={a.warehouseId} />
-          ))}
-        </div>
+        <h2 className="text-lg font-semibold mb-4">Khu vực ({filteredAreas.length})</h2>
+        {filteredAreas.length === 0 ? (
+          <div className="bg-white rounded-xl p-12 text-center border border-gray-100 text-gray-400">Không có khu vực nào</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-6">
+            {filteredAreas.map((area: AreaApi) => {
+              const parentWarehouse = warehouses.find((w: WarehouseApi) =>
+                w.areas.some((a: AreaApi) => a.id === area.id)
+              );
+              return (
+                <AreaCard key={area.id} area={area} warehouseId={String(parentWarehouse?.id ?? "")} />
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* CHARTS */}
       <div className="grid grid-cols-2 gap-6">
-        <div className="bg-white p-4 rounded-xl">
-          <h3 className="font-semibold mb-4">Cảnh báo</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={alertData}>
-              <XAxis dataKey="label" />
-              <YAxis />
-              <Tooltip />
-              <Line dataKey="value" stroke="#f97316" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl">
-          <h3 className="font-semibold mb-4">Thiết bị</h3>
-          {deviceData.length === 0 || deviceData.every((d) => d.value === 0) ? (
-            <div className="flex items-center justify-center h-[250px] text-gray-400">
-              Chưa có dữ liệu thiết bị
-            </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="font-semibold mb-4">Trạng thái thiết bị</h3>
+          {allDevices.length === 0 ? (
+            <div className="flex items-center justify-center h-[250px] text-gray-400">Chưa có dữ liệu thiết bị</div>
           ) : (
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie
-                  data={deviceData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ value }) => (value > 0 ? value : "")}
-                  outerRadius={70}
-                  fill="#8884d8"
-                  dataKey="value"
-                  nameKey="name"
-                >
+                <Pie data={deviceData} cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                  label={({ name, value }: { name: string; value: number }) => value > 0 ? `${name}: ${value}` : ""}>
                   {deviceData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
-                <Tooltip
-                  formatter={(value) => [`${value} thiết bị`, "Số lượng"]}
-                  labelFormatter={(label) => label}
-                  contentStyle={{
-                    backgroundColor: "rgba(255, 255, 255, 0.95)",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                  }}
-                />
-                <Legend verticalAlign="bottom" height={36} />
+                <Tooltip />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           )}
         </div>
 
-        <div className="bg-white p-4 rounded-xl">
-          <h3 className="font-semibold mb-4">Nhiệt độ & độ ẩm</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData}>
-              <XAxis dataKey="time" />
-              <YAxis />
-              <Tooltip />
-              <Line
-                dataKey="temperature"
-                stroke="#f97316"
-                strokeWidth={2}
-                dot={false}
-                name="Nhiệt độ"
-              />
-              <Line
-                dataKey="humidity"
-                stroke="#06b6d4"
-                strokeWidth={2}
-                dot={false}
-                name="Độ ẩm"
-              />
-              <Legend />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">Nhiệt độ & Độ ẩm</h3>
+            <span className="text-xs text-gray-400">{chartData.length} điểm dữ liệu</span>
+          </div>
+          {chartData.length === 0 ? (
+            <div className="flex items-center justify-center h-[250px] text-gray-400 text-sm">Chưa có dữ liệu cảm biến</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={chartData}>
+                <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                <YAxis />
+                <Tooltip />
+                <Line dataKey="temperature" stroke="#f97316" strokeWidth={2} dot={false} name="Nhiệt độ (°C)" connectNulls />
+                <Line dataKey="humidity" stroke="#06b6d4" strokeWidth={2} dot={false} name="Độ ẩm (%)" connectNulls />
+                <Legend />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
-        <div className="bg-white p-4 rounded-xl">
-          <h3 className="font-semibold mb-4">Điện năng</h3>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">Điện năng tiêu thụ (kWh)</h3>
+            <span className="text-xs text-orange-400 bg-orange-50 px-2 py-0.5 rounded-full">Dữ liệu mẫu</span>
+          </div>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={energyData}>
               <XAxis dataKey="time" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="energy" fill="#a855f7" />
+              <Bar dataKey="energy" fill="#a855f7" name="kWh" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="font-semibold mb-4">Tóm tắt theo kho</h3>
+          <div className="space-y-3">
+            {warehouses.map((w: WarehouseApi) => {
+              const wDevices: DeviceApi[] = w.areas.flatMap((a: AreaApi) => a.devices);
+              const wOnline = wDevices.filter((d: DeviceApi) => d.status?.toUpperCase() === "ONLINE").length;
+              const wAutoAreas = w.areas.filter((a: AreaApi) => a.operating_mode === "AUTO").length;
+              return (
+                <div key={w.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="font-medium text-gray-800 text-sm">{w.warehouse_name}</span>
+                  <div className="flex items-center gap-3 text-sm text-gray-500">
+                    <span>{w.areas.length} khu vực</span>
+                    <span className="text-green-600 font-medium">{wOnline}/{wDevices.length} online</span>
+                    <span className="text-blue-600 font-medium">{wAutoAreas} auto</span>
+                  </div>
+                </div>
+              );
+            })}
+            {warehouses.length === 0 && (
+              <p className="text-gray-400 text-center py-4">Chưa có dữ liệu</p>
+            )}
+          </div>
         </div>
       </div>
     </div>

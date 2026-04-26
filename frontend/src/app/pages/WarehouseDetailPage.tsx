@@ -1,196 +1,251 @@
+// src/pages/WarehouseDetailPage.tsx
 import { useParams, useNavigate } from 'react-router';
-import { 
-  ArrowLeft, MapPin, Thermometer, Droplets, Cpu, 
-  Bell, Plus, Pencil, Trash2, X, AlertCircle, Layers 
+import {
+  Thermometer, Droplets, Cpu, Bell, Plus, Pencil, Trash2, X, ChevronRight, Home, Layers
 } from 'lucide-react';
-import { store } from '../store';
-import { AreaCard } from '../components/AreaCard';
-import { useState } from 'react';
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from '../components/ui/breadcrumb';
-import { Area } from '../types';
+import { useState, useEffect } from 'react';
+import {
+  getWarehouses, createArea, deleteArea, updateAreaSettings,
+  getFoodTypes, getUsers, assignOperator,
+  WarehouseApi, AreaApi, FoodTypeApi, UserApi
+} from '../api/apiService';
+import {
+  Breadcrumb, BreadcrumbList, BreadcrumbItem,
+  BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage
+} from '../components/ui/breadcrumb';
 
 export function WarehouseDetailPage() {
   const { warehouseId } = useParams();
   const navigate = useNavigate();
-  const warehouse = store.getWarehouse(warehouseId!);
-  
-  const [showAreaModal, setShowAreaModal] = useState(false);
-  const [editingArea, setEditingArea] = useState<Area | null>(null);
-  const [areas, setAreas] = useState(store.getAreasByWarehouse(warehouseId!));
-  const [error, setError] = useState<string | null>(null);
 
-  const users = store.getUsers().filter(u => u.role === 'Operator');
-  const foodTypes = store.getFoodTypes();
+  const [warehouse, setWarehouse] = useState<WarehouseApi | null>(null);
+  const [foodTypes, setFoodTypes] = useState<FoodTypeApi[]>([]);
+  const [operators, setOperators] = useState<UserApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAreaModal, setShowAreaModal] = useState(false);
+  const [editingArea, setEditingArea] = useState<AreaApi | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: '',
-    warehouseId: warehouseId!,
-    type: 'vegetable' as 'vegetable' | 'meat',
-    operatorId: '',
-    foodTypeIds: [] as string[],
-    currentTemp: 0,
-    currentHumidity: 0,
-    minTemp: 0,
-    maxTemp: 0,
-    minHumidity: 0,
-    maxHumidity: 0,
-    status: 'normal' as 'normal' | 'warning' | 'alert',
-    deviceCount: 0
+    area_name: '',
+    current_food_type_id: '' as number | '',
+    operating_mode: 'AUTO' as 'AUTO' | 'MANUAL',
+    auto_door_timeout_sec: 30,
+    manual_override_mins: 30,
+    operator_id: '' as number | '',
   });
 
-  if (!warehouse) return <div className="p-8">Không tìm thấy kho lạnh</div>;
-
-  const allDevices = areas.flatMap(area => store.getDevicesByArea(area.id));
-  const activeDevices = allDevices.filter(d => d.status === 'online').length;
-
-  // Logic tính toán ngưỡng tối ưu
-  const calculateThresholds = (selectedIds: string[]) => {
-    if (selectedIds.length === 0) return { minT: 0, maxT: 0, minH: 0, maxH: 0, conflict: false };
-    const selectedFoods = foodTypes.filter(ft => selectedIds.includes(ft.id));
-    
-    let minT = Math.max(...selectedFoods.map(f => f.minTemp));
-    let maxT = Math.min(...selectedFoods.map(f => f.maxTemp));
-    let minH = Math.max(...selectedFoods.map(f => f.minHumidity));
-    let maxH = Math.min(...selectedFoods.map(f => f.maxHumidity));
-
-    return { minT, maxT, minH, maxH, conflict: minT > maxT || minH > maxH };
+  const fetchData = async () => {
+    try {
+      const [whRes, ftRes, usersRes] = await Promise.all([
+        getWarehouses(),
+        getFoodTypes(),
+        getUsers(),
+      ]);
+      const wh = whRes.data.data.find(w => w.id === Number(warehouseId));
+      setWarehouse(wh || null);
+      setFoodTypes(ftRes.data.data);
+      setOperators(usersRes.data.data.filter(u => u.role === 'OPERATOR'));
+    } catch (err) {
+      console.error('Lỗi tải dữ liệu:', err);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, [warehouseId]);
+
+  if (loading) return <div className="p-8 text-gray-400">Đang tải...</div>;
+  if (!warehouse) return <div className="p-8 text-gray-500">Không tìm thấy kho lạnh</div>;
+
+  const areas = warehouse.areas || [];
+  const allDevices = areas.flatMap(a => a.devices);
 
   const handleAddArea = () => {
     setEditingArea(null);
-    setError(null);
     setFormData({
-      name: '', warehouseId: warehouseId!, type: 'vegetable', operatorId: '',
-      foodTypeIds: [], currentTemp: 0, currentHumidity: 0,
-      minTemp: 0, maxTemp: 0, minHumidity: 0, maxHumidity: 0,
-      status: 'normal', deviceCount: 0
+      area_name: '',
+      current_food_type_id: '',
+      operating_mode: 'AUTO',
+      auto_door_timeout_sec: 30,
+      manual_override_mins: 30,
+      operator_id: '',
     });
     setShowAreaModal(true);
   };
 
-  const handleEditArea = (area: Area, e: React.MouseEvent) => {
+  const handleEditArea = (area: AreaApi, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingArea(area);
-    setError(null);
-    setFormData({ ...area });
+    setFormData({
+      area_name: area.area_name,
+      current_food_type_id: area.current_food_type?.id || '',
+      operating_mode: area.operating_mode as 'AUTO' | 'MANUAL',
+      auto_door_timeout_sec: area.auto_door_timeout_sec,
+      manual_override_mins: area.manual_override_mins,
+      operator_id: '',
+    });
     setShowAreaModal(true);
   };
 
-  const toggleFoodType = (id: string) => {
-    const nextIds = formData.foodTypeIds.includes(id)
-      ? formData.foodTypeIds.filter(fid => fid !== id)
-      : [...formData.foodTypeIds, id];
-
-    const result = calculateThresholds(nextIds);
-    setError(result.conflict ? "Xung đột: Các thực phẩm chọn không có dải an toàn chung!" : null);
-
-    setFormData(prev => ({
-      ...prev,
-      foodTypeIds: nextIds,
-      minTemp: result.minT,
-      maxTemp: result.maxT,
-      minHumidity: result.minH,
-      maxHumidity: result.maxH
-    }));
-  };
-
-  const handleDeleteArea = (areaId: string, e: React.MouseEvent) => {
+  const handleDeleteArea = async (areaId: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Bạn có chắc chắn muốn xóa khu vực này?')) {
-      store.deleteArea(areaId);
-      setAreas(store.getAreasByWarehouse(warehouseId!));
+    if (!confirm('Bạn có chắc chắn muốn xóa khu vực này?')) return;
+    try {
+      await deleteArea(areaId);
+      await fetchData();
+    } catch (err) {
+      console.error('Lỗi xóa khu vực:', err);
+      alert('Xóa thất bại!');
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (calculateThresholds(formData.foodTypeIds).conflict) {
-        alert("Không thể thiết lập do xung đột thực phẩm!");
-        return;
+    setSubmitting(true);
+    try {
+      if (editingArea) {
+        // Cập nhật settings của khu vực
+        await updateAreaSettings(editingArea.id, {
+          current_food_type_id: formData.current_food_type_id as number || undefined,
+          operating_mode: formData.operating_mode,
+          auto_door_timeout_sec: formData.auto_door_timeout_sec,
+          manual_override_mins: formData.manual_override_mins,
+        });
+        // Gán operator nếu có chọn
+        if (formData.operator_id) {
+          await assignOperator(editingArea.id, formData.operator_id as number);
+        }
+      } else {
+        // Tạo mới khu vực
+        const newArea = await createArea({
+          area_name: formData.area_name,
+          warehouse_id: Number(warehouseId),
+        });
+        // Sau khi tạo xong, cập nhật settings
+        if (newArea.data.data?.id) {
+          await updateAreaSettings(newArea.data.data.id, {
+            current_food_type_id: formData.current_food_type_id as number || undefined,
+            operating_mode: formData.operating_mode,
+            auto_door_timeout_sec: formData.auto_door_timeout_sec,
+            manual_override_mins: formData.manual_override_mins,
+          });
+          if (formData.operator_id) {
+            await assignOperator(newArea.data.data.id, formData.operator_id as number);
+          }
+        }
+      }
+      await fetchData();
+      setShowAreaModal(false);
+    } catch (err) {
+      console.error('Lỗi lưu khu vực:', err);
+      alert('Lưu thất bại!');
+    } finally {
+      setSubmitting(false);
     }
-
-    if (editingArea) store.updateArea(editingArea.id, formData);
-    else store.addArea(formData);
-
-    setAreas(store.getAreasByWarehouse(warehouseId!));
-    setShowAreaModal(false);
   };
 
   return (
     <div className="p-8 space-y-6 font-sans">
       <Breadcrumb>
         <BreadcrumbList>
-          <BreadcrumbItem><BreadcrumbLink onClick={() => navigate('/dashboard')} className="cursor-pointer text-gray-500 hover:text-gray-900">Tổng quan</BreadcrumbLink></BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem><BreadcrumbLink onClick={() => navigate('/warehouses')} className="cursor-pointer text-gray-500 hover:text-gray-900">Kho lạnh</BreadcrumbLink></BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem><BreadcrumbPage className="text-gray-900 font-semibold">{warehouse.name}</BreadcrumbPage></BreadcrumbItem>
+          <BreadcrumbItem>
+            <BreadcrumbLink onClick={() => navigate('/dashboard')} className="flex items-center gap-1 cursor-pointer text-gray-500 hover:text-gray-900">
+              <Home className="w-4 h-4" /> Tổng quan
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator><ChevronRight className="w-4 h-4" /></BreadcrumbSeparator>
+          <BreadcrumbItem>
+            <BreadcrumbLink onClick={() => navigate('/warehouses')} className="cursor-pointer text-gray-500 hover:text-gray-900">Kho lạnh</BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator><ChevronRight className="w-4 h-4" /></BreadcrumbSeparator>
+          <BreadcrumbItem>
+            <BreadcrumbPage className="text-gray-900 font-semibold">{warehouse.warehouse_name}</BreadcrumbPage>
+          </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* --- Warehouse Info Card --- */}
+      {/* Warehouse Info */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">{warehouse.name}</h1>
-            <p className="text-gray-500 flex items-center gap-2"><MapPin className="w-4 h-4" />{warehouse.location}</p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">{warehouse.warehouse_name}</h1>
+            <p className="text-gray-500">{areas.length} khu vực • {allDevices.length} thiết bị</p>
           </div>
-          <span className={`inline-flex px-3 py-2 rounded-lg text-sm font-medium ${warehouse.status === 'normal' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-            {warehouse.status === 'normal' ? 'Hoạt động bình thường' : 'Có cảnh báo'}
+          <span className="inline-flex px-3 py-2 rounded-lg text-sm font-medium bg-green-100 text-green-700">
+            Hoạt động
           </span>
         </div>
 
-        <div className="grid grid-cols-4 gap-6">
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl relative group">
+        <div className="grid grid-cols-3 gap-6">
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl relative">
             <span className="text-sm text-blue-700 font-medium">Khu vực</span>
-            <p className="text-3xl font-bold text-blue-900 mt-1">{warehouse.areaCount}</p>
-            <Layers className="absolute top-4 right-4 w-5 h-5 text-blue-400 opacity-50 group-hover:opacity-100 transition-opacity" />
+            <p className="text-3xl font-bold text-blue-900 mt-1">{areas.length}</p>
+            <Layers className="absolute top-4 right-4 w-5 h-5 text-blue-400 opacity-50" />
           </div>
-          <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl relative group">
+          <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl relative">
             <span className="text-sm text-green-700 font-medium">Thiết bị</span>
-            <p className="text-3xl font-bold text-green-900 mt-1">{activeDevices}/{allDevices.length}</p>
-            <Cpu className="absolute top-4 right-4 w-5 h-5 text-green-400 opacity-50 group-hover:opacity-100 transition-opacity" />
+            <p className="text-3xl font-bold text-green-900 mt-1">{allDevices.length}</p>
+            <Cpu className="absolute top-4 right-4 w-5 h-5 text-green-400 opacity-50" />
           </div>
-          <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl relative group">
-            <span className="text-sm text-orange-700 font-medium">Cảnh báo</span>
-            <p className="text-3xl font-bold text-orange-900 mt-1">{warehouse.activeAlerts}</p>
-            <Bell className="absolute top-4 right-4 w-5 h-5 text-orange-400 opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl relative">
+            <span className="text-sm text-orange-700 font-medium">Cảm biến</span>
+            <p className="text-3xl font-bold text-orange-900 mt-1">
+              {allDevices.filter(d => d.device_type === 'SENSOR').length}
+            </p>
+            <Bell className="absolute top-4 right-4 w-5 h-5 text-orange-400 opacity-50" />
           </div>
-          <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl relative group">
-            <span className="text-sm text-purple-700 font-medium">Nhiệt độ TB</span>
-            <p className="text-3xl font-bold text-purple-900 mt-1">{warehouse.averageTemp}°C</p>
-            <Thermometer className="absolute top-4 right-4 w-5 h-5 text-purple-400 opacity-50 group-hover:opacity-100 transition-opacity" />
-          </div>
-        </div>
-
-        <div className="mt-6 pt-6 border-t border-gray-100 flex gap-8">
-            <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-50 rounded-lg text-red-500"><Thermometer className="w-5 h-5" /></div>
-                <div><p className="text-xs text-gray-500">Nhiệt độ trung bình</p><p className="font-bold text-gray-900">{warehouse.averageTemp}°C</p></div>
-            </div>
-            <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-lg text-blue-500"><Droplets className="w-5 h-5" /></div>
-                <div><p className="text-xs text-gray-500">Độ ẩm trung bình</p><p className="font-bold text-gray-900">{warehouse.averageHumidity}%</p></div>
-            </div>
         </div>
       </div>
 
-      {/* --- Area Cards Section --- */}
+      {/* Areas */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Khu vực trong kho</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Khu vực trong kho</h2>
           <button onClick={handleAddArea} className="flex items-center gap-2 bg-[#2ECC71] text-white px-4 py-2 rounded-lg hover:bg-[#27AE60] transition-colors font-bold shadow-sm">
             <Plus className="w-5 h-5" /> Thêm khu vực
           </button>
         </div>
+
         {areas.length > 0 ? (
           <div className="grid grid-cols-2 gap-6">
             {areas.map(area => (
-              <div key={area.id} className="relative group">
-                <AreaCard area={area} warehouseId={warehouseId!} />
-                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={(e) => handleEditArea(area, e)} className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-colors"><Pencil className="w-4 h-4" /></button>
-                  <button onClick={(e) => handleDeleteArea(area.id, e)} className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+              <div key={area.id} className="relative group bg-white rounded-xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-bold text-gray-900">{area.area_name}</h3>
+                    <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block ${
+                      area.operating_mode === 'AUTO' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {area.operating_mode === 'AUTO' ? 'Tự động' : 'Thủ công'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={(e) => handleEditArea(area, e)} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={(e) => handleDeleteArea(area.id, e)} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {area.current_food_type && (
+                  <div className="mb-3 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500 mb-1">Thực phẩm đang bảo quản</p>
+                    <p className="font-semibold text-gray-800">{area.current_food_type.food_name}</p>
+                    <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                      <span className="flex items-center gap-1"><Thermometer className="w-3 h-3 text-red-400"/> {area.current_food_type.min_temp}~{area.current_food_type.max_temp}°C</span>
+                      <span className="flex items-center gap-1"><Droplets className="w-3 h-3 text-blue-400"/> {area.current_food_type.min_humi}~{area.current_food_type.max_humi}%</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-sm text-gray-500">
+                  <span>{area.devices.length} thiết bị</span>
+                  <span>{area.devices.filter(d => d.device_type === 'SENSOR').length} cảm biến</span>
                 </div>
               </div>
             ))}
@@ -200,74 +255,97 @@ export function WarehouseDetailPage() {
         )}
       </div>
 
-      {/* --- AREA MODAL --- */}
+      {/* Modal thêm/sửa khu vực */}
       {showAreaModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="p-6 border-b flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-900">{editingArea ? 'Chỉnh sửa' : 'Thêm'} khu vực mới</h2>
-              <button onClick={() => setShowAreaModal(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
+              <h2 className="text-xl font-bold text-gray-900">{editingArea ? 'Chỉnh sửa' : 'Thêm'} khu vực</h2>
+              <button onClick={() => setShowAreaModal(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg flex gap-2 items-center text-sm font-bold animate-shake">
-                  <AlertCircle className="w-4 h-4" /> {error}
+              {!editingArea && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Tên khu vực</label>
+                  <input
+                    type="text"
+                    value={formData.area_name}
+                    onChange={(e) => setFormData({ ...formData, area_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                    placeholder="VD: Khu bảo quản rau củ"
+                    required
+                  />
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Tên khu vực</label>
-                <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]" placeholder="Nhập tên khu vực..." required />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Loại thực phẩm bảo quản (Hệ thống tự tính ngưỡng)</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {foodTypes.map(ft => {
-                    const isSelected = formData.foodTypeIds.includes(ft.id);
-                    return (
-                      <button key={ft.id} type="button" onClick={() => toggleFoodType(ft.id)} className={`p-4 rounded-lg border-2 text-left transition-all relative ${isSelected ? 'border-[#2ECC71] bg-green-50 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
-                        <p className={`font-bold text-sm ${isSelected ? 'text-[#2ECC71]' : 'text-gray-800'}`}>{ft.name}</p>
-                        <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-medium">
-                          <span className="flex items-center gap-1"><Thermometer className="w-3 h-3 text-red-400"/> {ft.minTemp}~{ft.maxTemp}°C</span>
-                          <span className="flex items-center gap-1"><Droplets className="w-3 h-3 text-blue-400"/> {ft.minHumidity}~{ft.maxHumidity}%</span>
-                        </div>
-                        {isSelected && <div className="absolute top-2 right-2 w-2 h-2 bg-[#2ECC71] rounded-full"></div>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Người vận hành</label>
-                <select value={formData.operatorId} onChange={(e) => setFormData({ ...formData, operatorId: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]">
-                  <option value="">Chưa phân công</option>
-                  {users.map(user => <option key={user.id} value={user.id}>{user.fullName}</option>)}
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">Loại thực phẩm</label>
+                <select
+                  value={formData.current_food_type_id}
+                  onChange={(e) => setFormData({ ...formData, current_food_type_id: e.target.value ? Number(e.target.value) : '' })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                >
+                  <option value="">Chưa chọn</option>
+                  {foodTypes.map(ft => (
+                    <option key={ft.id} value={ft.id}>{ft.food_name} ({ft.min_temp}~{ft.max_temp}°C)</option>
+                  ))}
                 </select>
               </div>
 
-              {/* Ngưỡng tối ưu - Chỉ xem không sửa */}
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 shadow-inner">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block text-center">Nhiệt độ tối ưu chung</label>
-                  <div className="px-4 py-3 bg-white border border-gray-200 rounded-lg font-black text-red-500 shadow-sm text-center text-lg italic">
-                    {formData.minTemp}°C → {formData.maxTemp}°C
-                  </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">Chế độ hoạt động</label>
+                <select
+                  value={formData.operating_mode}
+                  onChange={(e) => setFormData({ ...formData, operating_mode: e.target.value as 'AUTO' | 'MANUAL' })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                >
+                  <option value="AUTO">Tự động</option>
+                  <option value="MANUAL">Thủ công</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Timeout cửa (giây)</label>
+                  <input
+                    type="number"
+                    value={formData.auto_door_timeout_sec}
+                    onChange={(e) => setFormData({ ...formData, auto_door_timeout_sec: Number(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                  />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block text-center">Độ ẩm tối ưu chung</label>
-                  <div className="px-4 py-3 bg-white border border-gray-200 rounded-lg font-black text-blue-500 shadow-sm text-center text-lg italic">
-                    {formData.minHumidity}% → {formData.maxHumidity}%
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Cooldown thủ công (phút)</label>
+                  <input
+                    type="number"
+                    value={formData.manual_override_mins}
+                    onChange={(e) => setFormData({ ...formData, manual_override_mins: Number(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                  />
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">Người vận hành</label>
+                <select
+                  value={formData.operator_id}
+                  onChange={(e) => setFormData({ ...formData, operator_id: e.target.value ? Number(e.target.value) : '' })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                >
+                  <option value="">Chưa phân công</option>
+                  {operators.map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setShowAreaModal(false)} className="px-6 py-2 border border-gray-300 text-gray-600 rounded-lg font-bold hover:bg-gray-50 transition-colors">Hủy</button>
-                <button type="submit" disabled={!!error || formData.foodTypeIds.length === 0} className={`px-8 py-2 rounded-lg font-bold shadow-lg transition-all ${ (error || formData.foodTypeIds.length === 0) ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none' : 'bg-[#2ECC71] text-white hover:bg-[#27AE60] active:scale-95 shadow-green-100'}`}>
-                  {editingArea ? 'Cập nhật' : 'Xác nhận thiết lập'}
+                <button type="button" onClick={() => setShowAreaModal(false)} className="px-6 py-2 border border-gray-300 text-gray-600 rounded-lg font-bold hover:bg-gray-50">Hủy</button>
+                <button type="submit" disabled={submitting} className="px-8 py-2 bg-[#2ECC71] text-white rounded-lg font-bold hover:bg-[#27AE60] disabled:opacity-50 transition-all">
+                  {submitting ? 'Đang lưu...' : editingArea ? 'Cập nhật' : 'Xác nhận'}
                 </button>
               </div>
             </form>

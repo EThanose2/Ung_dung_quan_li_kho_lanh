@@ -1,90 +1,80 @@
+// src/pages/LoginPage.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Lock, User } from 'lucide-react';
-import { loginApi } from '../api/auth';
+import { login } from '../api/apiService';
 
 export function LoginPage() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [formData, setFormData] = useState({ username: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     setError('');
-
-    try{
-      const response = await loginApi(username, password);
-      const user = response.data;
-      localStorage.setItem("user", JSON.stringify(user));
-      localStorage.setItem("role", user.role);
+    try {
+      const res = await login(formData);
+      // Lưu user vào localStorage để các page khác dùng
+      localStorage.setItem('current_user', JSON.stringify(res.data.data));
       navigate('/dashboard');
-    } catch (err: any){
-      setError('Tên đăng nhập hoặc mật khẩu không chính xác');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Đăng nhập thất bại!';
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2ECC71] to-[#27AE60] flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2ECC71] to-[#27AE60] flex items-center justify-center mx-auto mb-4">
-              <span className="text-white font-bold text-2xl">FG</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">FreshGuard</h1>
-            <p className="text-gray-500">Hệ thống giám sát IoT</p>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 w-full max-w-md p-8">
+        {/* Logo / Brand */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2ECC71] to-[#27AE60] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-100">
+            <span className="text-white font-black text-2xl">F</span>
           </div>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tên đăng nhập
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71] focus:border-transparent"
-                  placeholder="Nhập tên đăng nhập"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Mật khẩu
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71] focus:border-transparent"
-                  placeholder="Nhập mật khẩu"
-                  required
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full bg-gradient-to-r from-[#2ECC71] to-[#27AE60] text-white py-3 rounded-lg font-medium hover:shadow-lg transition-shadow"
-            >
-              Đăng nhập
-            </button>
-          </form>
+          <h1 className="text-2xl font-bold text-gray-900">FreshGuard</h1>
+          <p className="text-gray-500 text-sm mt-1">Hệ thống quản lý kho lạnh thông minh</p>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm font-medium">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tên đăng nhập</label>
+            <input
+              type="text"
+              value={formData.username}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#2ECC71] focus:bg-white transition-all outline-none"
+              placeholder="Nhập tên đăng nhập"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Mật khẩu</label>
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#2ECC71] focus:bg-white transition-all outline-none"
+              placeholder="Nhập mật khẩu"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-[#2ECC71] to-[#27AE60] text-white rounded-xl font-bold shadow-lg shadow-green-100 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 mt-2"
+          >
+            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          </button>
+        </form>
       </div>
     </div>
   );

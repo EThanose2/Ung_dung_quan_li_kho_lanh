@@ -1,73 +1,113 @@
+// src/pages/DeviceDetailPage.tsx
+// Đã kết nối API thật: getWarehouses, getSensorHistory, controlDevice
+
 import { useParams, useNavigate } from 'react-router';
-import { Power, PowerOff, Activity, Settings, Clock, List } from 'lucide-react';
+import { Power, PowerOff, Activity } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { store } from '../store';
-import { useState } from 'react';
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from '../components/ui/breadcrumb';
+import { useState, useEffect } from 'react';
+import {
+  Breadcrumb, BreadcrumbList, BreadcrumbItem,
+  BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage
+} from '../components/ui/breadcrumb';
+import {
+  getWarehouses, getSensorHistory, controlDevice,
+  AreaApi, DeviceApi, SensorReadingApi, WarehouseApi
+} from '../api/apiService';
 
 export function DeviceDetailPage() {
   const { warehouseId, areaId, deviceId } = useParams();
   const navigate = useNavigate();
-  const [device, setDevice] = useState(store.getDevice(deviceId!));
-  const [showControlModeModal, setShowControlModeModal] = useState(false);
 
-  if (!device) {
-    return <div className="p-8">Không tìm thấy thiết bị</div>;
+  const [warehouse, setWarehouse] = useState<WarehouseApi | null>(null);
+  const [area, setArea] = useState<AreaApi | null>(null);
+  const [device, setDevice] = useState<DeviceApi | null>(null);
+  const [sensorHistory, setSensorHistory] = useState<SensorReadingApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [controlling, setControlling] = useState(false);
+  const [lastAction, setLastAction] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const res = await getWarehouses();
+        const wh = res.data.data.find(w => String(w.id) === warehouseId);
+        setWarehouse(wh || null);
+
+        const foundArea = wh?.areas.find(a => String(a.id) === areaId);
+        setArea(foundArea || null);
+
+        const foundDevice = foundArea?.devices.find(d => String(d.id) === deviceId);
+        setDevice(foundDevice || null);
+
+        // Load lịch sử cảm biến nếu là SENSOR
+        if (foundDevice?.device_type?.toUpperCase() === 'SENSOR' && foundArea) {
+          // Tự detect loại cảm biến từ tên/feed key
+          const feedKey = foundDevice.adafruit_feed_key?.toLowerCase() ?? '';
+          const name = foundDevice.device_name?.toLowerCase() ?? '';
+          let sensorType: 'TEMP' | 'HUMI' | 'LIGHT' = 'TEMP';
+          if (feedKey.includes('humi') || feedKey.includes('am') || name.includes('ẩm')) {
+            sensorType = 'HUMI';
+          } else if (feedKey.includes('light') || name.includes('ánh sáng')) {
+            sensorType = 'LIGHT';
+          }
+
+          const histRes = await getSensorHistory({ type: sensorType, area_id: foundArea.id, limit: 24 });
+          setSensorHistory(histRes.data.data);
+        }
+      } catch (err) {
+        console.error('Lỗi load DeviceDetailPage:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
+  }, [warehouseId, areaId, deviceId]);
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-screen">
+        <div className="text-gray-500">Đang tải dữ liệu...</div>
+      </div>
+    );
   }
 
-  const area = store.getArea(device.areaId);
-  const warehouse = area ? store.getWarehouse(area.warehouseId) : null;
-  const isSensor = device.category === 'sensor';
-  const deviceLogs = store.getDeviceLogs(device.id);
-  const deviceSchedules = store.getSchedules().filter(s => s.deviceId === device.id);
+  if (!device) {
+    return <div className="p-8 text-gray-500">Không tìm thấy thiết bị</div>;
+  }
 
-  const toggleDevice = () => {
-    const updated = store.updateDevice(device.id, { isActive: !device.isActive });
-    if (updated) {
-      setDevice(updated);
-      store.addDeviceLog({
-        deviceId: device.id,
-        timestamp: new Date(),
-        action: updated.isActive ? 'Bật thiết bị (Thủ công)' : 'Tắt thiết bị (Thủ công)',
-        user: store.getCurrentUser()?.fullName
-      });
+  const isActuator = device.device_type?.toUpperCase() === 'ACTUATOR';
+  const isSensor = device.device_type?.toUpperCase() === 'SENSOR';
+  const isOnline = device.status?.toUpperCase() === 'ONLINE';
+
+  // Format chart data
+  const chartData = sensorHistory.map(r => ({
+    time: new Date(r.recorded_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    value: r.reading_value,
+    type: r.sensor_type,
+  }));
+
+  const handleControl = async (action: string) => {
+    setControlling(true);
+    try {
+      await controlDevice({ device_id: device.adafruit_feed_key, action });
+      setLastAction(action);
+    } catch (err) {
+      console.error('Lỗi điều khiển:', err);
+      alert('Gửi lệnh thất bại!');
+    } finally {
+      setControlling(false);
     }
   };
 
-  const handleControlModeChange = (mode: 'manual' | 'automatic' | 'scheduled') => {
-    const updated = store.updateDevice(device.id, { controlMode: mode });
-    if (updated) {
-      setDevice(updated);
-      store.addDeviceLog({
-        deviceId: device.id,
-        timestamp: new Date(),
-        action: `Chuyển chế độ điều khiển: ${mode === 'manual' ? 'Thủ công' : mode === 'automatic' ? 'Tự động' : 'Lịch trình'}`,
-        user: store.getCurrentUser()?.fullName
-      });
-      setShowControlModeModal(false);
-    }
-  };
-
-  const sensorData = device.type === 'temperature' ? [
-    { time: '00:00', value: 8.0 },
-    { time: '04:00', value: 8.5 },
-    { time: '08:00', value: 7.5 },
-    { time: '12:00', value: 8.0 },
-    { time: '16:00', value: 8.2 },
-    { time: '20:00', value: 7.8 },
-    { time: '23:59', value: 8.0 },
-  ] : device.type === 'humidity' ? [
-    { time: '00:00', value: 85 },
-    { time: '04:00', value: 83 },
-    { time: '08:00', value: 86 },
-    { time: '12:00', value: 85 },
-    { time: '16:00', value: 84 },
-    { time: '20:00', value: 86 },
-    { time: '23:59', value: 85 },
-  ] : [];
+  const feedKey = device.adafruit_feed_key?.toLowerCase() ?? '';
+  const devName = device.device_name?.toLowerCase() ?? '';
+  const isHumi = feedKey.includes('humi') || feedKey.includes('am') || devName.includes('ẩm');
+  const chartColor = isHumi ? '#3498DB' : '#E74C3C';
+  const chartUnit = isHumi ? '%' : '°C';
 
   return (
     <div className="p-8 space-y-6">
+      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -84,250 +124,117 @@ export function DeviceDetailPage() {
           <BreadcrumbSeparator />
           <BreadcrumbItem>
             <BreadcrumbLink onClick={() => navigate(`/warehouses/${warehouseId}`)} className="cursor-pointer text-gray-600 hover:text-gray-900">
-              {warehouse?.name}
+              {warehouse?.warehouse_name}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
             <BreadcrumbLink onClick={() => navigate(`/warehouses/${warehouseId}/areas/${areaId}`)} className="cursor-pointer text-gray-600 hover:text-gray-900">
-              {area?.name}
+              {area?.area_name}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage className="text-gray-900">{device.name}</BreadcrumbPage>
+            <BreadcrumbPage className="text-gray-900">{device.device_name}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
+      {/* Info card */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <div className="flex items-start justify-between mb-6">
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">{device.name}</h1>
-            <p className="text-gray-500">
-              {warehouse?.name} → {area?.name}
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{device.device_name}</h1>
+            <p className="text-gray-500 text-sm mt-1">
+              {warehouse?.warehouse_name} → {area?.area_name}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-              device.status === 'online' ? 'bg-green-100 text-green-700' :
-              device.status === 'offline' ? 'bg-gray-100 text-gray-700' :
-              'bg-red-100 text-red-700'
-            }`}>
-              <Activity className="w-4 h-4" />
-              {device.status === 'online' ? 'Trực tuyến' : device.status === 'offline' ? 'Ngoại tuyến' : 'Lỗi'}
-            </span>
-            {!isSensor && (
-              <button
-                onClick={() => setShowControlModeModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-                Chế độ
-              </button>
-            )}
-          </div>
+          <span className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+            isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+          }`}>
+            <Activity className="w-4 h-4" />
+            {isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
+          </span>
         </div>
 
-        <div className="grid grid-cols-4 gap-6 mb-6">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-6">
           <div className="p-4 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-500 mb-1">Loại thiết bị</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {device.type === 'temperature' ? 'Cảm biến nhiệt độ' :
-               device.type === 'humidity' ? 'Cảm biến độ ẩm' :
-               device.type === 'cooling' ? 'Hệ thống làm lạnh' :
-               device.type === 'fan' ? 'Quạt thông gió' : 'Đèn chiếu sáng'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {device.category === 'sensor' ? 'Cảm biến' : 'Điều khiển'}
-            </p>
+            <p className="font-semibold text-gray-900">{device.device_type}</p>
           </div>
-
-          {isSensor && device.value !== undefined && (
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-500 mb-1">Feed key (Adafruit)</p>
+            <p className="font-semibold text-gray-900 font-mono text-sm">{device.adafruit_feed_key || '—'}</p>
+          </div>
+          {isSensor && device.latest_value !== undefined && (
             <div className="p-4 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-500 mb-1">Giá trị hiện tại</p>
               <p className="text-3xl font-bold text-gray-900">
-                {device.value}{device.type === 'temperature' ? '°C' : '%'}
+                {device.latest_value}{chartUnit}
               </p>
             </div>
           )}
-
-          {!isSensor && (
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-500 mb-1">Chế độ điều khiển</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {device.controlMode === 'manual' ? 'Thủ công' :
-                 device.controlMode === 'automatic' ? 'Tự động' : 'Lịch trình'}
-              </p>
-            </div>
-          )}
-
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-500 mb-1">Cập nhật lần cuối</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {new Date(device.lastUpdate).toLocaleString('vi-VN')}
-            </p>
-          </div>
         </div>
 
-        {!isSensor && (
-          <div className="p-6 bg-gray-50 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-1">Điều khiển thiết bị</h3>
-                <p className="text-sm text-gray-500">Bật hoặc tắt thiết bị thủ công</p>
-              </div>
-              <button
-                onClick={toggleDevice}
-                className={`flex items-center gap-3 px-6 py-3 rounded-lg font-medium transition-all ${
-                  device.isActive
-                    ? 'bg-green-500 text-white hover:bg-green-600'
-                    : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-                }`}
-              >
-                {device.isActive ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
-                {device.isActive ? 'Đang BẬT' : 'Đang TẮT'}
-              </button>
+        {/* Điều khiển actuator */}
+        {isActuator && (
+          <div className="mt-6 p-6 bg-gray-50 rounded-xl">
+            <h3 className="font-semibold text-gray-900 mb-1">Điều khiển thiết bị</h3>
+            <p className="text-sm text-gray-500 mb-4">Gửi lệnh thủ công qua Adafruit MQTT</p>
+            {lastAction && (
+              <p className="text-xs text-green-600 mb-3">✓ Đã gửi lệnh: <strong>{lastAction}</strong></p>
+            )}
+            <div className="flex flex-wrap gap-3">
+              {['ON', 'OFF', 'MODE_1', 'MODE_2', 'MODE_3'].map(action => (
+                <button
+                  key={action}
+                  onClick={() => handleControl(action)}
+                  disabled={controlling || !isOnline}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    action === 'ON'
+                      ? 'bg-green-500 text-white hover:bg-green-600'
+                      : action === 'OFF'
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  }`}
+                >
+                  {action === 'ON' ? <Power className="w-4 h-4" /> : action === 'OFF' ? <PowerOff className="w-4 h-4" /> : null}
+                  {controlling ? '...' : action}
+                </button>
+              ))}
             </div>
           </div>
         )}
       </div>
 
-      {isSensor && sensorData.length > 0 && (
+      {/* Biểu đồ lịch sử cảm biến */}
+      {isSensor && chartData.length > 0 && (
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">
-            Biểu đồ {device.type === 'temperature' ? 'nhiệt độ' : 'độ ẩm'} (24 giờ)
+            Lịch sử {isHumi ? 'độ ẩm' : 'nhiệt độ'} ({chartData.length} điểm)
           </h2>
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={sensorData}>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis dataKey="time" stroke="#6B7280" />
+              <XAxis dataKey="time" stroke="#6B7280" tick={{ fontSize: 11 }} />
               <YAxis stroke="#6B7280" />
-              <Tooltip />
+              <Tooltip formatter={(v) => [`${v}${chartUnit}`, isHumi ? 'Độ ẩm' : 'Nhiệt độ']} />
               <Line
-                key={`sensor-${device.id}`}
                 type="monotone"
                 dataKey="value"
-                stroke={device.type === 'temperature' ? '#E74C3C' : '#3498DB'}
-                strokeWidth={3}
-                dot={{ r: 4 }}
+                stroke={chartColor}
+                strokeWidth={2.5}
+                dot={{ r: 3 }}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {/* Schedules */}
-      {!isSensor && deviceSchedules.length > 0 && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-4">
-            <Clock className="w-5 h-5 text-gray-700" />
-            <h2 className="font-semibold text-gray-900">Lịch trình tự động</h2>
-          </div>
-          <div className="space-y-3">
-            {deviceSchedules.map(schedule => (
-              <div key={schedule.id} className="p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {schedule.action === 'on' ? 'Bật' : 'Tắt'} thiết bị: {schedule.startTime} - {schedule.endTime}
-                    </p>
-                    <p className="text-sm text-gray-500 mt-1">
-                      Các ngày: {schedule.days.map(d => ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][d - 1]).join(', ')}
-                    </p>
-                  </div>
-                  <span className={`px-2 py-1 rounded text-xs ${
-                    schedule.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {schedule.enabled ? 'Đang hoạt động' : 'Tạm dừng'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Device Logs */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center gap-2 mb-4">
-          <List className="w-5 h-5 text-gray-700" />
-          <h2 className="font-semibold text-gray-900">Nhật ký hoạt động</h2>
-        </div>
-        <div className="space-y-2">
-          {deviceLogs.slice(0, 10).map(log => (
-            <div key={log.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex-1">
-                <p className="text-gray-900">{log.action}</p>
-                {log.value !== undefined && (
-                  <p className="text-sm text-gray-600">Giá trị: {log.value}{device.type === 'temperature' ? '°C' : '%'}</p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">{log.user || 'Hệ thống'}</p>
-              </div>
-              <span className="text-xs text-gray-500 whitespace-nowrap ml-4">
-                {new Date(log.timestamp).toLocaleString('vi-VN')}
-              </span>
-            </div>
-          ))}
-          {deviceLogs.length === 0 && (
-            <p className="text-center text-gray-500 py-8">Chưa có hoạt động nào được ghi nhận</p>
-          )}
-        </div>
-      </div>
-
-      {/* Control Mode Modal */}
-      {showControlModeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md">
-            <div className="p-6 border-b border-gray-100">
-              <h2 className="text-xl font-semibold text-gray-900">Chế độ điều khiển</h2>
-            </div>
-            <div className="p-6 space-y-3">
-              <button
-                onClick={() => handleControlModeChange('manual')}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-colors ${
-                  device.controlMode === 'manual'
-                    ? 'border-[#2ECC71] bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <p className="font-semibold text-gray-900">Thủ công</p>
-                <p className="text-sm text-gray-600">Điều khiển thiết bị bằng tay</p>
-              </button>
-
-              <button
-                onClick={() => handleControlModeChange('automatic')}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-colors ${
-                  device.controlMode === 'automatic'
-                    ? 'border-[#2ECC71] bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <p className="font-semibold text-gray-900">Tự động</p>
-                <p className="text-sm text-gray-600">Hệ thống tự động điều khiển theo ngưỡng</p>
-              </button>
-
-              <button
-                onClick={() => handleControlModeChange('scheduled')}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-colors ${
-                  device.controlMode === 'scheduled'
-                    ? 'border-[#2ECC71] bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <p className="font-semibold text-gray-900">Lịch trình</p>
-                <p className="text-sm text-gray-600">Điều khiển theo lịch đã cài đặt</p>
-              </button>
-            </div>
-            <div className="p-6 border-t border-gray-100">
-              <button
-                onClick={() => setShowControlModeModal(false)}
-                className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
+      {isSensor && chartData.length === 0 && (
+        <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100 text-gray-400">
+          Chưa có dữ liệu lịch sử cảm biến
         </div>
       )}
     </div>

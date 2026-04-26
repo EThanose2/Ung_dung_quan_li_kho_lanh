@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router';
-import { RootLayout } from './layouts/RootLayout';
+import RootLayout from './layouts/RootLayout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WarehousesPage } from './pages/WarehousesPage';
@@ -24,11 +24,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const user = localStorage.getItem("user");
+  const userStr = localStorage.getItem("user");
+  const user = userStr ? JSON.parse(userStr) : null;
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  if (user.role !== 'Admin') {
+  if (user.role !== 'ADMIN') {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
