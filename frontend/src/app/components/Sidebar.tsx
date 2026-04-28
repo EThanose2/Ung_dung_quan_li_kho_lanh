@@ -1,13 +1,16 @@
 import { NavLink, useNavigate } from 'react-router';
 import { LayoutDashboard, Warehouse, Calendar, Bell, FileText, Users, User, LogOut, Apple, ClipboardList } from 'lucide-react';
-import { store } from '../store';
 
 export function Sidebar() {
   const navigate = useNavigate();
-  const currentUser = store.getCurrentUser();
+
+  // Lấy dữ liệu user trực tiếp từ localStorage
+  const userStr = localStorage.getItem('current_user');
+  const currentUser = userStr ? JSON.parse(userStr) : null;
 
   const handleLogout = () => {
-    store.logout();
+    localStorage.removeItem('current_user'); // Xóa dữ liệu user
+    localStorage.removeItem('token');       // Nếu có lưu token thì xóa luôn
     navigate('/login');
   };
 
@@ -39,7 +42,8 @@ export function Sidebar() {
 
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {menuItems.map((item) => {
-          if (item.adminOnly && currentUser?.role !== 'Admin') return null;
+          // Kiểm tra quyền: Chỉ ẩn nếu là adminOnly và role KHÔNG PHẢI LÀ 'ADMIN'
+          if (item.adminOnly && currentUser?.role !== 'ADMIN') return null;
 
           return (
             <NavLink
@@ -63,7 +67,8 @@ export function Sidebar() {
       <div className="p-4 border-t border-gray-200">
         <div className="mb-3 px-4 py-2 bg-gray-50 rounded-lg">
           <p className="text-xs text-gray-500">Đăng nhập với</p>
-          <p className="font-medium text-gray-900">{currentUser?.fullName}</p>
+          {/* Lưu ý: Thay fullName bằng full_name tùy theo cấu trúc object lưu trong localStorage */}
+          <p className="font-medium text-gray-900">{currentUser?.full_name || currentUser?.username}</p>
           <p className="text-xs text-gray-500">{currentUser?.role}</p>
         </div>
         <button

@@ -15,6 +15,7 @@ export interface UserApi {
 export interface DeviceApi {
   id: number;
   device_name: string;
+  device_code: string;        // ✅ Thêm field này
   adafruit_feed_key: string;
   device_type: string;
   status: string;
@@ -214,7 +215,7 @@ export function getDevices() {
   return axiosClient.get<{ status: string; data: DeviceApi[] }>("/devices");
 }
 
-export function createDevice(body: Partial<DeviceApi> & { area_id?: number }) {
+export function createDevice(body: Partial<DeviceApi> & { area_id?: number; area?: { id: number } }) {
   return axiosClient.post<{ status: string; data: DeviceApi }>("/devices", body);
 }
 

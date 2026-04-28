@@ -3,7 +3,29 @@ import React, { useState, useEffect } from "react";
 import { Apple, Thermometer, Droplets, Plus, Pencil, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router";
 import { getFoodTypes, createFoodType, updateFoodType, deleteFoodType, FoodTypeApi } from "../api/apiService";
-
+const Field = ({
+    label, field, unit, formData, setFormData
+  }: {
+    label: string;
+    field: string;
+    unit?: string;
+    formData: Record<string, any>;
+    setFormData: (v: any) => void;
+  }) => (
+    <div className="space-y-1">
+      <span className="text-[10px] font-black text-gray-400 uppercase ml-1">{label}</span>
+      <div className="relative">
+        <input
+          type="number"
+          required
+          value={formData[field] as number}
+          onChange={(e) => setFormData({ ...formData, [field]: Number(e.target.value) })}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2ECC71] outline-none"
+        />
+        {unit && <span className="absolute right-3 top-2.5 text-gray-400 text-sm">{unit}</span>}
+      </div>
+    </div>
+  );
 export function FoodsPage() {
   const navigate = useNavigate();
   const [foods, setFoods] = useState<FoodTypeApi[]>([]);
@@ -85,21 +107,7 @@ export function FoodsPage() {
     }
   };
 
-  const Field = ({ label, field, unit }: { label: string; field: keyof typeof formData; unit?: string }) => (
-    <div className="space-y-1">
-      <span className="text-[10px] font-black text-gray-400 uppercase ml-1">{label}</span>
-      <div className="relative">
-        <input
-          type="number"
-          required
-          value={formData[field] as number}
-          onChange={(e) => setFormData({ ...formData, [field]: Number(e.target.value) })}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2ECC71] outline-none"
-        />
-        {unit && <span className="absolute right-3 top-2.5 text-gray-400 text-sm">{unit}</span>}
-      </div>
-    </div>
-  );
+  
 
   return (
     <div className="p-8 space-y-6">
@@ -186,8 +194,8 @@ export function FoodsPage() {
                   <Thermometer className="w-4 h-4" /> Dải nhiệt độ bảo quản (°C)
                 </label>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Tối thiểu (Min)" field="min_temp" unit="°C" />
-                  <Field label="Tối đa (Max)" field="max_temp" unit="°C" />
+                  <Field label="Tối thiểu (Min)" field="min_temp" unit="°C" formData={formData} setFormData={setFormData}/>
+                  <Field label="Tối đa (Max)" field="max_temp" unit="°C" formData={formData} setFormData={setFormData} />
                 </div>
               </div>
 
@@ -196,8 +204,8 @@ export function FoodsPage() {
                   <Droplets className="w-4 h-4" /> Dải độ ẩm an toàn (%)
                 </label>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Tối thiểu (%)" field="min_humi" unit="%" />
-                  <Field label="Tối đa (%)" field="max_humi" unit="%" />
+                  <Field label="Tối thiểu (%)" field="min_humi" unit="%" formData={formData} setFormData={setFormData} />
+                  <Field label="Tối đa (%)" field="max_humi" unit="%" formData={formData} setFormData={setFormData}/>
                 </div>
               </div>
 

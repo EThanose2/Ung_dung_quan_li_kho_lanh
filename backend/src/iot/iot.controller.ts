@@ -30,13 +30,13 @@ export class IotController {
 
   @Put(':id')
   async updateDevice(@Param('id') id: number, @Body() body: Partial<Device>) {
-    await this.iotService.updateDevice(id, body);
+    await this.iotService.updateDevice(+id, body);
     return { status: 'success', message: 'Cập nhật thiết bị thành công' };
   }
 
   @Delete(':id')
   async deleteDevice(@Param('id') id: number) {
-    await this.iotService.deleteDevice(id);
+    await this.iotService.deleteDevice(+id);
     return { status: 'success', message: 'Đã xóa thiết bị' };
   }
 

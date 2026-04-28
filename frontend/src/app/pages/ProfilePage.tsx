@@ -131,7 +131,8 @@ export function ProfilePage() {
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex justify-between items-center mb-6">
               <h2 className="font-semibold text-gray-900">Đổi mật khẩu</h2>
-              {!isChangingPassword && (
+              
+              {currentUser.role === 'ADMIN' && !isChangingPassword && (
                 <button onClick={() => setIsChangingPassword(true)} className="px-4 py-2 text-[#2ECC71] hover:bg-green-50 rounded-lg transition-colors">
                   Đổi mật khẩu
                 </button>
@@ -169,7 +170,11 @@ export function ProfilePage() {
                 </div>
               </form>
             ) : (
-              <p className="text-gray-500">Bảo vệ tài khoản của bạn bằng mật khẩu mạnh</p>
+              <p className="text-gray-500 text-sm">
+                {currentUser.role === 'ADMIN' 
+                  ? "Bảo vệ tài khoản của bạn bằng mật khẩu mạnh." 
+                  : "Liên hệ Admin nếu bạn cần thay đổi mật khẩu."}
+              </p>
             )}
           </div>
         </div>

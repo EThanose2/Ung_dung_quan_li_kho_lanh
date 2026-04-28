@@ -22,7 +22,9 @@ export class IotService {
     return await this.deviceRepo.find({ relations: ['area'] });
   }
 
-  async createDevice(data: Partial<Device>) {
+  async createDevice(data: Partial<Device> & { area?: { id: number } }) {
+    // ✅ FIX: TypeORM relation cần object { area: { id } }
+    // FE gửi { area: { id: number } } — đã được map đúng
     return await this.deviceRepo.save(this.deviceRepo.create(data));
   }
 

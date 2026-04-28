@@ -215,7 +215,7 @@ export function DashboardPage() {
               const wAutoAreas = w.areas.filter((a: AreaApi) => a.operating_mode === "AUTO").length;
               return (
                 <div key={w.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="font-medium text-gray-800 text-sm">{w.warehouse_name}</span>
+                  <span className="font-medium text-gray-800 text-sm break-words max-w-[50%]">{w.warehouse_name}</span>
                   <div className="flex items-center gap-3 text-sm text-gray-500">
                     <span>{w.areas.length} khu vực</span>
                     <span className="text-green-600 font-medium">{wOnline}/{wDevices.length} online</span>

@@ -21,6 +21,7 @@ const DEVICE_TYPES = ['SENSOR', 'ACTUATOR', 'TEMP', 'HUMI', 'DOOR_SENSOR', 'EMER
 
 const emptyDeviceForm = {
   device_name: '',
+  device_code: '',
   device_type: 'SENSOR',
   adafruit_feed_key: '',
   status: 'ONLINE',
@@ -163,6 +164,7 @@ export function AreaDetailPage() {
     setEditingDevice(device);
     setDeviceForm({
       device_name: device.device_name,
+      device_code: device.device_code ?? '', 
       device_type: device.device_type,
       adafruit_feed_key: device.adafruit_feed_key || '',
       status: device.status || 'ONLINE',
@@ -192,7 +194,7 @@ export function AreaDetailPage() {
           devices: prev.devices.map((d: DeviceApi) => d.id === editingDevice.id ? { ...d, ...deviceForm } : d)
         } : prev);
       } else {
-        const res = await createDevice({ ...deviceForm, area_id: area.id });
+        const res = await createDevice({ ...deviceForm, area: { id: area.id } });
         setArea(prev => prev ? { ...prev, devices: [...prev.devices, res.data.data] } : prev);
       }
       setShowDeviceModal(false);
@@ -428,6 +430,13 @@ export function AreaDetailPage() {
                 <input type="text" required value={deviceForm.device_name}
                   onChange={(e) => setDeviceForm({ ...deviceForm, device_name: e.target.value })}
                   placeholder="VD: Cảm biến nhiệt khu A"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Mã thiết bị</label>
+                <input type="text" required value={deviceForm.device_code}
+                  onChange={(e) => setDeviceForm({ ...deviceForm, device_code: e.target.value })}
+                  placeholder="VD: DHT_TU_01"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]" />
               </div>
               <div>

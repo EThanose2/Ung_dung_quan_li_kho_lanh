@@ -2,13 +2,20 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { getUsers, createUser, updateUser, deleteUser, UserApi } from '../api/apiService';
-
+import { useNavigate } from 'react-router';
 export function UsersPage() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState<UserApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserApi | null>(null);
-
+  useEffect(() => {
+    const currentUser = JSON.parse(localStorage.getItem('current_user') || '{}');
+    if (currentUser?.role !== 'ADMIN') {
+      alert('Bạn không có quyền truy cập trang này!');
+      navigate('/dashboard'); // Chuyển hướng về trang chủ/dashboard
+    }
+  }, [navigate]);
   const [formData, setFormData] = useState({
     username: '',
     password: '',

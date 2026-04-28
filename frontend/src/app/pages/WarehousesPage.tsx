@@ -1,7 +1,7 @@
 // src/pages/WarehousesPage.tsx
 // CRUD đầy đủ: Xem danh sách, Tạo kho, Đổi tên kho, Xóa kho
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Warehouse, Thermometer, Droplets, AlertTriangle,
@@ -26,7 +26,7 @@ export function WarehousesPage() {
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [editingWarehouse, setEditingWarehouse] = useState<WarehouseApi | null>(null);
   const [warehouseName, setWarehouseName] = useState('');
-
+  const [searchQuery, setSearchQuery] = useState("");
   const fetchWarehouses = async () => {
     try {
       setLoading(true);
@@ -123,7 +123,12 @@ export function WarehousesPage() {
       setSubmitting(false);
     }
   };
-
+  // Thêm đoạn này trước phần return (cùng cấp với các hàm handle...)
+  const filteredWarehouses = useMemo(() => {
+    return warehouses.filter(w => 
+      w.warehouse_name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [warehouses, searchQuery]);
   return (
     <div className="p-8 space-y-6 min-h-screen bg-gray-50/50">
       {/* Breadcrumb */}
@@ -169,17 +174,25 @@ export function WarehousesPage() {
           </button>
         </div>
       </div>
-
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center">
+        <input
+          type="text"
+          placeholder="Tìm kiếm kho theo tên..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+        />
+      </div>
       {/* Danh sách */}
       {loading ? (
         <div className="bg-white rounded-xl p-12 text-center text-gray-400">Đang tải dữ liệu...</div>
-      ) : warehouses.length === 0 ? (
+      ) : filteredWarehouses.length === 0 ? (
         <div className="bg-white rounded-xl p-12 text-center border-2 border-dashed border-gray-200 text-gray-400">
-          Chưa có kho nào. Nhấn <strong className="text-gray-600">"Thêm kho mới"</strong> để tạo.
+          Không tìm thấy kho nào phù hợp.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {warehouses.map(wh => {
+          {filteredWarehouses.map((wh: WarehouseApi) => {
             const { allDevices, onlineDevices, alertCount, avgTemp, avgHumi } = getStats(wh);
             const hasAlert = alertCount > 0;
 
@@ -187,7 +200,7 @@ export function WarehousesPage() {
               <div
                 key={wh.id}
                 onClick={() => navigate(`/warehouses/${wh.id}`)}
-                className="group relative bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-[#2ECC71]/30 transition-all cursor-pointer"
+                className="group relative bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-[#2ECC71]/40 transition-all cursor-pointer"
               >
                 {/* Action buttons — hiện khi hover */}
                 <div
@@ -221,13 +234,7 @@ export function WarehousesPage() {
                     </h3>
                     <p className="text-xs text-gray-400 mt-0.5">{wh.areas.length} khu vực</p>
                   </div>
-                  <span className={`shrink-0 inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    hasAlert
-                      ? 'bg-orange-50 text-orange-600 border border-orange-100'
-                      : 'bg-green-50 text-green-600 border border-green-100'
-                  }`}>
-                    {hasAlert ? 'Cảnh báo' : 'Ổn định'}
-                  </span>
+                 
                 </div>
 
                 {/* Stats */}

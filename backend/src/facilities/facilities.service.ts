@@ -159,6 +159,20 @@ export class FacilitiesService {
   }
 
   async deleteArea(id: number) {
+    // ✅ FIX: Load relation devices để kiểm tra trước khi xóa
+    const area = await this.areaRepo.findOne({
+      where: { id },
+      relations: ['devices'],
+    });
+    if (!area) {
+      throw new HttpException('Không tìm thấy khu vực', HttpStatus.NOT_FOUND);
+    }
+    if (area.devices?.length > 0) {
+      throw new HttpException(
+        `Khu vực còn ${area.devices.length} thiết bị. Xóa hết thiết bị trước!`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     await this.areaRepo.delete(id);
     return true;
   }
