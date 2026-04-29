@@ -236,17 +236,14 @@ export function AreaDetailPage() {
             <p className="text-gray-500 text-sm mt-1">{warehouse?.warehouse_name}</p>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleToggleMode} disabled={savingMode}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                area.operating_mode === 'AUTO' ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}>
-              {savingMode ? 'Đang lưu...' : area.operating_mode === 'AUTO' ? '⚡ Tự động' : '🖐 Thủ công'}
-            </button>
-            <button onClick={() => setShowFoodModal(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm">
-              <Tag className="w-4 h-4" />
-              {food ? food.food_name : 'Chọn thực phẩm'}
-            </button>
+            
+            <div className="flex flex-wrap gap-2">
+              {area.food_types && area.food_types.map(f => (
+                <span key={f.id} className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1">
+                  <Tag className="w-3 h-3" /> {f.food_name}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 

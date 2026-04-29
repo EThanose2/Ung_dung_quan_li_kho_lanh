@@ -18,6 +18,6 @@ export class User {
   @Column({ nullable: true })
   full_name: string;
 
-  @OneToMany(() => Area, (area) => area.user)
+  @OneToMany(() => Area, (area) => area.operators)
   areas: Area[];
 }

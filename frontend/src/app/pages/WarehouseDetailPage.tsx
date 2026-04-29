@@ -30,7 +30,7 @@ export function WarehouseDetailPage() {
 
   const [formData, setFormData] = useState({
     area_name: '',
-    current_food_type_id: '' as number | '',
+    food_type_ids: [] as number[],
     operating_mode: 'AUTO' as 'AUTO' | 'MANUAL',
     auto_door_timeout_sec: 30,
     manual_override_mins: 30,
@@ -68,12 +68,31 @@ export function WarehouseDetailPage() {
 
   // ====== HANDLERS ======
 
+  const validateFoodIntersection = (selectedIds: number[]): string | null => {
+    if (selectedIds.length < 2) return null;
+    const selected = foodTypes.filter(ft => selectedIds.includes(ft.id));
+    const bounds = selected.reduce(
+      (acc, f) => ({
+        minT: Math.max(acc.minT, f.min_temp),
+        maxT: Math.min(acc.maxT, f.max_temp),
+        minH: Math.max(acc.minH, f.min_humi),
+        maxH: Math.min(acc.maxH, f.max_humi),
+      }),
+      { minT: -99, maxT: 99, minH: 0, maxH: 100 }
+    );
+    if (bounds.minT > bounds.maxT || bounds.minH > bounds.maxH) {
+      const names = selected.map(f => f.food_name).join(', ');
+      return `Xung đột thông số! [${names}] không có dải nhiệt độ/độ ẩm chung.`;
+    }
+    return null;
+  };
+
   const handleAddArea = () => {
     setEditingArea(null);
     setError('');
     setFormData({
       area_name: '',
-      current_food_type_id: '',
+      food_type_ids: [],
       operating_mode: 'AUTO',
       auto_door_timeout_sec: 30,
       manual_override_mins: 30,
@@ -88,7 +107,7 @@ export function WarehouseDetailPage() {
     setError('');
     setFormData({
       area_name: area.area_name,
-      current_food_type_id: area.current_food_type?.id || '',
+      food_type_ids: area.food_types?.map(f => f.id) ?? [],
       operating_mode: area.operating_mode as 'AUTO' | 'MANUAL',
       auto_door_timeout_sec: area.auto_door_timeout_sec,
       manual_override_mins: area.manual_override_mins,
@@ -113,11 +132,18 @@ export function WarehouseDetailPage() {
     e.preventDefault();
     setSubmitting(true);
     setError('');
+
+    const intersectError = validateFoodIntersection(formData.food_type_ids);
+    if (intersectError) {
+      setError(intersectError);
+      setSubmitting(false);
+      return;
+    }
+
     try {
       if (editingArea) {
-        // Cập nhật settings
         await updateAreaSettings(editingArea.id, {
-          current_food_type_id: formData.current_food_type_id as number || undefined,
+          food_type_ids: formData.food_type_ids,
           operating_mode: formData.operating_mode,
           auto_door_timeout_sec: formData.auto_door_timeout_sec,
           manual_override_mins: formData.manual_override_mins,
@@ -126,27 +152,17 @@ export function WarehouseDetailPage() {
           await assignOperator(editingArea.id, formData.operator_id as number);
         }
       } else {
-        // 🔑 FIX: BE Area entity dùng relation object, không phải warehouse_id trực tiếp
-        // Gọi thẳng axiosClient để truyền đúng payload
         const newAreaRes = await axiosClient.post('/areas', {
           area_name: formData.area_name,
-          warehouse: { id: Number(warehouseId) }, // <-- đúng format TypeORM relation
+          warehouse: { id: Number(warehouseId) },
+          food_type_ids: formData.food_type_ids,
+          operating_mode: formData.operating_mode,
+          auto_door_timeout_sec: formData.auto_door_timeout_sec,
+          manual_override_mins: formData.manual_override_mins,
         });
         const newAreaId = newAreaRes.data?.data?.id;
-
-        if (newAreaId) {
-          // Cập nhật thêm settings sau khi tạo
-          if (formData.current_food_type_id || formData.operating_mode !== 'AUTO') {
-            await updateAreaSettings(newAreaId, {
-              current_food_type_id: formData.current_food_type_id as number || undefined,
-              operating_mode: formData.operating_mode,
-              auto_door_timeout_sec: formData.auto_door_timeout_sec,
-              manual_override_mins: formData.manual_override_mins,
-            });
-          }
-          if (formData.operator_id) {
-            await assignOperator(newAreaId, formData.operator_id as number);
-          }
+        if (newAreaId && formData.operator_id) {
+          await assignOperator(newAreaId, formData.operator_id as number);
         }
       }
       await fetchData();
@@ -235,11 +251,13 @@ export function WarehouseDetailPage() {
                 d.device_type?.toUpperCase() === 'HUMI' ||
                 d.adafruit_feed_key?.includes('humi')
               );
-              const food = area.current_food_type;
-              const tempWarn = food && tempDev?.latest_value != null &&
-                (tempDev.latest_value < food.min_temp || tempDev.latest_value > food.max_temp);
-              const humiWarn = food && humiDev?.latest_value != null &&
-                (humiDev.latest_value < food.min_humi || humiDev.latest_value > food.max_humi);
+              const foods = area.food_types?.length
+                ? area.food_types
+                : area.current_food_type ? [area.current_food_type] : [];
+              const tempWarn = foods.length > 0 && tempDev?.latest_value != null &&
+                foods.some(f => tempDev.latest_value! < f.min_temp || tempDev.latest_value! > f.max_temp);
+              const humiWarn = foods.length > 0 && humiDev?.latest_value != null &&
+                foods.some(f => humiDev.latest_value! < f.min_humi || humiDev.latest_value! > f.max_humi);
 
               return (
                 <div
@@ -293,7 +311,11 @@ export function WarehouseDetailPage() {
                       <p className={`text-lg font-bold ${tempWarn ? 'text-orange-600' : 'text-gray-900'}`}>
                         {tempDev?.latest_value != null ? `${tempDev.latest_value}°C` : '—'}
                       </p>
-                      {food && <p className="text-[10px] text-gray-400">{food.min_temp}~{food.max_temp}°C</p>}
+                      {foods.length > 0 && (
+                        <p className="text-[10px] text-gray-400">
+                          {Math.max(...foods.map(f => f.min_temp))}~{Math.min(...foods.map(f => f.max_temp))}°C
+                        </p>
+                      )}
                     </div>
                     <div className={`p-3 rounded-lg ${humiWarn ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
                       <div className="flex items-center gap-1 mb-1">
@@ -303,22 +325,38 @@ export function WarehouseDetailPage() {
                       <p className={`text-lg font-bold ${humiWarn ? 'text-orange-600' : 'text-gray-900'}`}>
                         {humiDev?.latest_value != null ? `${humiDev.latest_value}%` : '—'}
                       </p>
-                      {food && <p className="text-[10px] text-gray-400">{food.min_humi}~{food.max_humi}%</p>}
+                      {foods.length > 0 && (
+                        <p className="text-[10px] text-gray-400">
+                          {Math.max(...foods.map(f => f.min_humi))}~{Math.min(...foods.map(f => f.max_humi))}%
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {/* Food type badge */}
-                  {food && (
-                    <div className="mb-3 flex items-center gap-1.5 text-xs text-gray-500">
-                      <Apple className="w-3.5 h-3.5 text-green-500" />
-                      <span>{food.food_name}</span>
+                  {/* Food type badges */}
+                  {foods.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-1.5">
+                      {foods.map(f => (
+                        <span key={f.id} className="flex items-center gap-1 text-xs text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+                          <Apple className="w-3 h-3 text-green-500" />
+                          {f.food_name}
+                        </span>
+                      ))}
                     </div>
                   )}
 
                   {/* Footer */}
                   <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                    <span className="text-xs text-gray-400">{area.devices.length} thiết bị</span>
-                    {/* Mũi tên navigate — hiện khi hover */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-400">
+                        {area.devices.length} thiết bị
+                      </span>
+                      <span className="text-gray-300">·</span>
+                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                        <Thermometer className="w-3 h-3" />
+                        {area.devices.filter(d => d.device_type?.toUpperCase() !== 'ACTUATOR').length} cảm biến
+                      </span>
+                    </div>
                     <span className="flex items-center gap-1 text-xs text-[#2ECC71] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                       Xem thiết bị <ArrowRight className="w-3.5 h-3.5" />
                     </span>
@@ -371,21 +409,46 @@ export function WarehouseDetailPage() {
                 </div>
               )}
 
-              {/* Loại thực phẩm */}
+              {/* Loại thực phẩm — multi select */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5">Loại thực phẩm</label>
-                <select
-                  value={formData.current_food_type_id}
-                  onChange={e => setFormData({ ...formData, current_food_type_id: e.target.value ? Number(e.target.value) : '' })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                >
-                  <option value="">Chưa chọn</option>
-                  {foodTypes.map(ft => (
-                    <option key={ft.id} value={ft.id}>
-                      {ft.food_name} ({ft.min_temp}~{ft.max_temp}°C, {ft.min_humi}~{ft.max_humi}%)
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                  Loại thực phẩm
+                  {formData.food_type_ids.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-green-600">
+                      Đã chọn {formData.food_type_ids.length}
+                    </span>
+                  )}
+                </label>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {foodTypes.map(ft => {
+                    const checked = formData.food_type_ids.includes(ft.id);
+                    return (
+                      <button
+                        key={ft.id}
+                        type="button"
+                        onClick={() => {
+                          const ids = checked
+                            ? formData.food_type_ids.filter(id => id !== ft.id)
+                            : [...formData.food_type_ids, ft.id];
+                          // Validate ngay khi chọn
+                          const err = validateFoodIntersection(ids);
+                          setError(err ?? '');
+                          setFormData({ ...formData, food_type_ids: ids });
+                        }}
+                        className={`p-3 rounded-lg border-2 text-left transition-all ${
+                          checked ? 'border-[#2ECC71] bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <p className={`text-sm font-bold ${checked ? 'text-[#2ECC71]' : 'text-gray-700'}`}>
+                          {ft.food_name}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {ft.min_temp}~{ft.max_temp}°C · {ft.min_humi}~{ft.max_humi}%
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Chế độ hoạt động */}
@@ -458,7 +521,7 @@ export function WarehouseDetailPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !!error}
                   className="px-8 py-2.5 bg-[#2ECC71] text-white rounded-lg font-bold hover:bg-[#27AE60] disabled:opacity-50 transition-all active:scale-95"
                 >
                   {submitting ? 'Đang lưu...' : editingArea ? 'Cập nhật' : 'Tạo khu vực'}

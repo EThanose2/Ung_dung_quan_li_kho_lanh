@@ -109,7 +109,13 @@ export class FacilitiesController {
       message: `Đã gán ${res.user} vào khu ${res.area}`,
     };
   }
-
+  @Post('areas/:id/add-food')
+  async addFood(
+    @Param('id') id: number,
+    @Body('food_type_id') foodTypeId: number,
+  ) {
+    return await this.facilitiesService.addFoodToArea(id, foodTypeId);
+  }
   // ==================== FOOD TYPES ====================
 
   @Get('food-types')

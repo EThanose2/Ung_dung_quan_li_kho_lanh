@@ -38,6 +38,7 @@ export interface AreaApi {
   auto_door_timeout_sec: number;
   manual_override_mins: number;
   current_food_type: FoodTypeApi | null;
+  food_types: FoodTypeApi[];
   devices: DeviceApi[];
 }
 
@@ -121,7 +122,7 @@ export function getAreas() {
   return axiosClient.get<{ status: string; data: AreaApi[] }>("/areas");
 }
 
-export function createArea(body: { area_name: string; warehouse_id: number }) {
+export function createArea(body: { area_name: string; warehouse_id: number; current_food_type_id: number; }) {
   return axiosClient.post<{ status: string; data: AreaApi }>("/areas", body);
 }
 
@@ -132,6 +133,7 @@ export function deleteArea(id: number) {
 export function updateAreaSettings(
   areaId: number,
   body: {
+    food_type_ids?: number[];
     current_food_type_id?: number;
     auto_door_timeout_sec?: number;
     manual_override_mins?: number;

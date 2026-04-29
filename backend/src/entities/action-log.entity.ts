@@ -40,4 +40,9 @@ export class ActionLog {
   @ManyToOne(() => Device, { nullable: true })
   @JoinColumn({ name: 'device_id' })
   device: Device;
+  @Column({ default: false })
+  is_resolved: boolean; // Trạng thái đã xử lý chưa?
+
+  @Column({ default: false })
+  is_escalated: boolean;
 }

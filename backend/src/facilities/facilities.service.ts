@@ -1,4 +1,5 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus,NotFoundException,
+  BadRequestException,  } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Warehouse } from '../entities/warehouse.entity';
@@ -32,7 +33,8 @@ export class FacilitiesService {
         sr.reading_value
       FROM warehouses w
       LEFT JOIN areas a ON w.id = a.warehouse_id
-      LEFT JOIN food_types f ON a.current_food_type_id = f.id
+      LEFT JOIN area_food_types aft ON a.id = aft.area_id
+      LEFT JOIN food_types f ON aft.food_type_id = f.id
       LEFT JOIN devices d ON a.id = d.area_id
       LEFT JOIN (
         SELECT device_id, reading_value 
@@ -65,19 +67,21 @@ export class FacilitiesService {
             auto_door_timeout_sec: row.auto_door_timeout_sec,
             operating_mode: row.operating_mode || 'AUTO',
             manual_override_mins: row.manual_override_mins || 30,
-            current_food_type: row.food_id
-              ? {
-                  id: row.food_id,
-                  food_name: row.food_name,
-                  min_temp: row.min_temp,
-                  max_temp: row.max_temp,
-                  min_humi: row.min_humi,
-                  max_humi: row.max_humi,
-                }
-              : null,
+            food_types: [],
             devices: [],
           };
           warehouse.areas.push(area);
+        }
+
+        if (row.food_id && !area.food_types.find((f: any) => f.id === row.food_id)) {
+          area.food_types.push({
+            id: row.food_id,
+            food_name: row.food_name,
+            min_temp: row.min_temp,
+            max_temp: row.max_temp,
+            min_humi: row.min_humi,
+            max_humi: row.max_humi,
+          });
         }
 
         if (row.device_id) {
@@ -154,8 +158,16 @@ export class FacilitiesService {
     });
   }
 
-  async createArea(data: Partial<Area>) {
-    return await this.areaRepo.save(this.areaRepo.create(data));
+  async createArea(data: Partial<Area> & { food_type_ids?: number[] }) {
+    const newArea = this.areaRepo.create(data);
+
+    if (data.food_type_ids && data.food_type_ids.length > 0) {
+      newArea.food_types = await this.foodTypeRepo.findBy(
+        data.food_type_ids.map(id => ({ id }))
+      );
+    }
+
+    return await this.areaRepo.save(newArea);
   }
 
   async deleteArea(id: number) {
@@ -182,7 +194,9 @@ export class FacilitiesService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!area || !user)
       throw new HttpException('Lỗi dữ liệu', HttpStatus.BAD_REQUEST);
-    area.user = user;
+    const currentOperators = area.operators || [];
+    currentOperators.push(user);
+    area.operators = currentOperators;
     await this.areaRepo.save(area);
     return { user: user.username, area: area.area_name };
   }
@@ -190,7 +204,7 @@ export class FacilitiesService {
   async updateAreaSettings(id: number, data: any) {
     const area = await this.areaRepo.findOne({
       where: { id },
-      relations: ['warehouse'],
+      relations: ['warehouse', 'food_types'],
     });
     if (!area)
       throw new HttpException('Không tìm thấy Khu vực!', HttpStatus.NOT_FOUND);
@@ -199,6 +213,13 @@ export class FacilitiesService {
       area.auto_door_timeout_sec = data.auto_door_timeout_sec;
     if (data.manual_override_mins !== undefined)
       area.manual_override_mins = data.manual_override_mins;
+
+    // Cập nhật food_types nếu có
+    if (data.food_type_ids !== undefined) {
+      area.food_types = data.food_type_ids.length > 0
+        ? await this.foodTypeRepo.findBy(data.food_type_ids.map((fid: number) => ({ id: fid })))
+        : [];
+    }
 
     if (data.operating_mode !== undefined) {
       const oldMode = area.operating_mode;
@@ -217,12 +238,6 @@ export class FacilitiesService {
       }
     }
 
-    if (data.current_food_type_id !== undefined) {
-      const food = await this.foodTypeRepo.findOne({
-        where: { id: data.current_food_type_id },
-      });
-      if (food) area.current_food_type = food;
-    }
 
     return await this.areaRepo.save(area);
   }
@@ -246,4 +261,69 @@ export class FacilitiesService {
     await this.foodTypeRepo.delete(id);
     return true;
   }
+
+   async addFoodToArea(areaId: number, foodTypeId: number) {
+    // 1. Lấy Khu vực
+    const area = await this.areaRepo.findOne({
+      where: { id: areaId },
+      relations: ['food_types'],
+    });
+
+    if (!area) throw new NotFoundException('Không tìm thấy khu vực này');
+
+    // Khởi tạo mảng rỗng nếu chưa có gì (chống lỗi TypeORM)
+    const currentFoods = area.food_types || [];
+
+    // 2. Lấy thực phẩm mới định thêm vào
+    const newFood = await this.foodTypeRepo.findOne({
+      where: { id: foodTypeId },
+    });
+    if (!newFood)
+      throw new NotFoundException('Không tìm thấy loại thực phẩm này');
+
+    // 3. Nếu khu vực đã có thực phẩm, tiến hành check "Vùng giao thoa"
+    if (currentFoods.length > 0) {
+      const allFoods = [...currentFoods, newFood];
+
+      // Tìm dải nhiệt độ và độ ẩm giao thoa (Strict Intersection)
+      const bounds = allFoods.reduce(
+        (acc, f) => ({
+          minT: Math.max(acc.minT, f.min_temp),
+          maxT: Math.min(acc.maxT, f.max_temp),
+          minH: Math.max(acc.minH, f.min_humi),
+           maxH: Math.min(acc.maxH, f.max_humi),
+        }),
+        { minT: -99, maxT: 99, minH: 0, maxH: 100 },
+      );
+
+      // Nếu dải Min vượt quá dải Max -> Không có tiếng nói chung
+      if (bounds.minT > bounds.maxT || bounds.minH > bounds.maxH) {
+        throw new BadRequestException(
+          'Xung đột thông số! Thực phẩm này không thể để chung với các loại hiện có do lệch dải nhiệt độ/độ ẩm.',
+        );
+      }
+    }
+
+    // 4. Lưu liên kết mới vào bảng trung gian
+    currentFoods.push(newFood);
+    area.food_types = currentFoods;
+    await this.areaRepo.save(area);
+
+    return {
+      status: 'success',
+      message: 'Đã thêm thực phẩm vào khu vực thành công.',
+    };
+  }
+
+  async resolveAlert(logId: number) {
+    const log = await this.actionLogRepo.findOne({ where: { id: logId } });
+    if (!log) throw new NotFoundException('Không tìm thấy log cảnh báo');
+
+    log.is_resolved = true;
+    await this.actionLogRepo.save(log);
+
+    // Ghi nhận thêm 1 log là nhân viên đã dọn dẹp xong
+    return { status: 'success', message: 'Đã xác nhận xử lý cảnh báo!' };
+  }
+  
 }
