@@ -40,6 +40,7 @@ export interface AreaApi {
   current_food_type: FoodTypeApi | null;
   food_types: FoodTypeApi[];
   devices: DeviceApi[];
+  operators: UserApi[];
 }
 
 export interface WarehouseApi {
@@ -100,9 +101,21 @@ export function updateProfile(id: number, body: { full_name?: string; password?:
 // ================================================================
 // WAREHOUSES
 // ================================================================
-export const getWarehouses = () =>
-  axiosClient.get<{ status: string; data: WarehouseApi[] }>("/warehouses");
- 
+// Hàm helper đọc user từ localStorage
+export function getCurrentUser(): UserApi | null {
+  try {
+    return JSON.parse(localStorage.getItem('current_user') ?? 'null');
+  } catch { return null; }
+}
+
+// Sửa getWarehouses — tự động gửi user_id nếu là OPERATOR
+export const getWarehouses = () => {
+  const user = getCurrentUser();
+  const params = user?.role?.toUpperCase() === 'OPERATOR' 
+    ? { user_id: user.id } 
+    : {};
+  return axiosClient.get<{ status: string; data: WarehouseApi[] }>('/warehouses', { params });
+};
 export const getWarehouseById = (id: number) =>
   axiosClient.get<{ status: string; data: WarehouseApi }>(`/warehouses/${id}`);
  
@@ -114,6 +127,8 @@ export const updateWarehouse = (id: number, body: { warehouse_name: string }) =>
  
 export const deleteWarehouse = (id: number) =>
   axiosClient.delete<{ status: string; message: string }>(`/warehouses/${id}`);
+
+
 
 // ================================================================
 // AREAS
@@ -138,6 +153,7 @@ export function updateAreaSettings(
     auto_door_timeout_sec?: number;
     manual_override_mins?: number;
     operating_mode?: "AUTO" | "MANUAL";
+    operator_id?: number | null;
   }
 ) {
   return axiosClient.put<{ status: string; message: string; data: AreaApi }>(

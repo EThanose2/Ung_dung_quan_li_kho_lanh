@@ -15,9 +15,17 @@ export function LoginPage() {
     setError('');
     try {
       const res = await login(formData);
-      // Lưu user vào localStorage để các page khác dùng
-      localStorage.setItem('current_user', JSON.stringify(res.data.data));
-      navigate('/dashboard');
+      const user = res.data.data;
+
+      // ✅ Lưu đúng key
+      localStorage.setItem('current_user', JSON.stringify(user));
+
+      // ✅ Navigate theo role
+      if (user.role?.toUpperCase() === 'ADMIN') {
+        navigate('/dashboard');
+      } else {
+        navigate('/warehouses'); // Operator không cần dashboard
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Đăng nhập thất bại!';
       setError(msg);

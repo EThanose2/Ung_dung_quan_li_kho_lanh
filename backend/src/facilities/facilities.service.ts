@@ -17,34 +17,58 @@ export class FacilitiesService {
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(ActionLog) private actionLogRepo: Repository<ActionLog>,
   ) {}
+  private async getOperatorsByAreaIds(areaIds: number[]): Promise<any[]> {
+  if (!areaIds.length) return [];
+  return this.warehouseRepo.query(`
+    SELECT uam.area_id, u.id as user_id, u.username, u.full_name
+    FROM user_area_management uam
+    INNER JOIN users u ON uam.user_id = u.id
+    WHERE uam.area_id IN (${areaIds.join(',')})
+  `);
+}
 
+// Helper gắn operators vào result
+private attachOperators(result: any[], operatorRows: any[]): any[] {
+  for (const warehouse of result) {
+    for (const area of warehouse.areas) {
+      area.operators = operatorRows
+        .filter(o => Number(o.area_id) === area.id)
+        .map(o => ({ id: o.user_id, username: o.username, full_name: o.full_name }));
+    }
+  }
+  return result;
+}
   // ================= QUẢN LÝ KHO =================
 
   // Dùng chung cho getAllWarehouses và getWarehouseById
   private buildWarehouseQuery(warehouseId?: number): Promise<any[]> {
-    const whereClause = warehouseId ? `WHERE w.id = ${warehouseId}` : '';
-    return this.warehouseRepo.query(`
-      SELECT 
-        w.id as warehouse_id, w.warehouse_name,
-        a.id as area_id, a.area_name, a.auto_door_timeout_sec,
-        a.operating_mode, a.manual_override_mins,
-        f.id as food_id, f.food_name, f.min_temp, f.max_temp, f.min_humi, f.max_humi,
-        d.id as device_id, d.device_name, d.adafruit_feed_key, d.device_type, d.status,
-        sr.reading_value
-      FROM warehouses w
-      LEFT JOIN areas a ON w.id = a.warehouse_id
-      LEFT JOIN area_food_types aft ON a.id = aft.area_id
-      LEFT JOIN food_types f ON aft.food_type_id = f.id
-      LEFT JOIN devices d ON a.id = d.area_id
-      LEFT JOIN (
-        SELECT device_id, reading_value 
-        FROM sensor_readings 
-        WHERE id IN (SELECT MAX(id) FROM sensor_readings GROUP BY device_id)
-      ) sr ON sr.device_id = d.id
-      ${whereClause}
-      ORDER BY w.id, a.id, d.id
-    `);
-  }
+  
+  const whereClause = warehouseId ? `WHERE w.id = ${warehouseId}` : '';
+
+
+  return this.warehouseRepo.query(`
+    SELECT 
+      w.id as warehouse_id, w.warehouse_name,
+      a.id as area_id, a.area_name, a.auto_door_timeout_sec,
+      a.operating_mode, a.manual_override_mins,
+      f.id as food_id, f.food_name, f.min_temp, f.max_temp, f.min_humi, f.max_humi,
+      d.id as device_id, d.device_name, d.adafruit_feed_key, d.device_type, d.status,
+      sr.reading_value
+      
+    FROM warehouses w
+    LEFT JOIN areas a ON w.id = a.warehouse_id
+    LEFT JOIN area_food_types aft ON a.id = aft.area_id
+    LEFT JOIN food_types f ON aft.food_type_id = f.id
+    LEFT JOIN devices d ON a.id = d.area_id
+    LEFT JOIN (
+      SELECT device_id, reading_value 
+      FROM sensor_readings 
+      WHERE id IN (SELECT MAX(id) FROM sensor_readings GROUP BY device_id)
+    ) sr ON sr.device_id = d.id
+    ${whereClause}
+    ORDER BY w.id, a.id, d.id
+  `);
+}
 
   private formatWarehouseRows(rawData: any[]): any[] {
     return rawData.reduce((acc: any[], row: any) => {
@@ -69,10 +93,11 @@ export class FacilitiesService {
             manual_override_mins: row.manual_override_mins || 30,
             food_types: [],
             devices: [],
+            operators: [],
           };
           warehouse.areas.push(area);
         }
-
+        
         if (row.food_id && !area.food_types.find((f: any) => f.id === row.food_id)) {
           area.food_types.push({
             id: row.food_id,
@@ -104,16 +129,48 @@ export class FacilitiesService {
 
   async getAllWarehouses() {
     const raw = await this.buildWarehouseQuery();
-    return this.formatWarehouseRows(raw);
+  const result = this.formatWarehouseRows(raw);
+  const areaIds = result.flatMap(w => w.areas.map((a: any) => a.id));
+  const operators = await this.getOperatorsByAreaIds(areaIds);
+  return this.attachOperators(result, operators);
   }
 
   async getWarehouseById(id: number) {
     const raw = await this.buildWarehouseQuery(id);
-    const result = this.formatWarehouseRows(raw);
-    if (!result.length)
-      throw new HttpException('Không tìm thấy kho lạnh', HttpStatus.NOT_FOUND);
-    return result[0];
+  const result = this.formatWarehouseRows(raw);
+  if (!result.length)
+    throw new HttpException('Không tìm thấy kho lạnh', HttpStatus.NOT_FOUND);
+  const areaIds = result[0].areas.map((a: any) => a.id);
+  const operators = await this.getOperatorsByAreaIds(areaIds);
+  return this.attachOperators(result, operators)[0];
   }
+  async getWarehousesByOperator(userId: number) {
+  const raw = await this.warehouseRepo.query(`
+    SELECT 
+      w.id as warehouse_id, w.warehouse_name,
+      a.id as area_id, a.area_name, a.auto_door_timeout_sec,
+      a.operating_mode, a.manual_override_mins,
+      f.id as food_id, f.food_name, f.min_temp, f.max_temp, f.min_humi, f.max_humi,
+      d.id as device_id, d.device_name, d.adafruit_feed_key, d.device_type, d.status,
+      sr.reading_value
+    FROM warehouses w
+    INNER JOIN areas a ON w.id = a.warehouse_id
+    INNER JOIN user_area_management uam ON a.id = uam.area_id AND uam.user_id = ${userId}
+    LEFT JOIN area_food_types aft ON a.id = aft.area_id
+    LEFT JOIN food_types f ON aft.food_type_id = f.id
+    LEFT JOIN devices d ON a.id = d.area_id
+    LEFT JOIN (
+      SELECT device_id, reading_value 
+      FROM sensor_readings 
+      WHERE id IN (SELECT MAX(id) FROM sensor_readings GROUP BY device_id)
+    ) sr ON sr.device_id = d.id
+    ORDER BY w.id, a.id, d.id
+  `);
+  const result = this.formatWarehouseRows(raw);
+  const areaIds = result.flatMap(w => w.areas.map((a: any) => a.id));
+  const operators = await this.getOperatorsByAreaIds(areaIds);
+  return this.attachOperators(result, operators);
+}
 
   async createWarehouse(data: Partial<Warehouse>) {
     if (!data.warehouse_name?.trim())
@@ -158,17 +215,34 @@ export class FacilitiesService {
     });
   }
 
-  async createArea(data: Partial<Area> & { food_type_ids?: number[] }) {
-    const newArea = this.areaRepo.create(data);
+  async createArea(data: Partial<Area> & { food_type_ids?: number[]; operator_id?: number }) {
+  const newArea = this.areaRepo.create(data);
 
-    if (data.food_type_ids && data.food_type_ids.length > 0) {
-      newArea.food_types = await this.foodTypeRepo.findBy(
-        data.food_type_ids.map(id => ({ id }))
-      );
-    }
-
-    return await this.areaRepo.save(newArea);
+  if (data.food_type_ids && data.food_type_ids.length > 0) {
+    newArea.food_types = await this.foodTypeRepo.findBy(
+      data.food_type_ids.map(id => ({ id }))
+    );
   }
+
+  // ✅ Gán operator ngay khi tạo nếu có
+  // facilities.service.ts - updateAreaSettings, thêm vào cuối trước return:
+if (data.operator_id !== undefined) {
+  if (data.operator_id) {
+    const user = await this.userRepo.findOne({ where: { id: data.operator_id } });
+    if (user) newArea.operators = [user]; // thay thế hoàn toàn
+  } else {
+    newArea.operators = []; // bỏ phân công
+  }
+}
+
+  const saved = await this.areaRepo.save(newArea);
+
+  // Load lại đầy đủ relations để trả về
+  return await this.areaRepo.findOne({
+    where: { id: saved.id },
+    relations: ['warehouse', 'food_types', 'operators'],
+  });
+}
 
   async deleteArea(id: number) {
     // ✅ FIX: Load relation devices để kiểm tra trước khi xóa
@@ -190,21 +264,25 @@ export class FacilitiesService {
   }
 
   async assignOperator(areaId: number, userId: number) {
-    const area = await this.areaRepo.findOne({ where: { id: areaId } });
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!area || !user)
-      throw new HttpException('Lỗi dữ liệu', HttpStatus.BAD_REQUEST);
-    const currentOperators = area.operators || [];
-    currentOperators.push(user);
-    area.operators = currentOperators;
-    await this.areaRepo.save(area);
-    return { user: user.username, area: area.area_name };
-  }
+  const area = await this.areaRepo.findOne({
+    where: { id: areaId },
+    relations: ['operators'],
+  });
+  const user = await this.userRepo.findOne({ where: { id: userId } });
+  if (!area || !user)
+    throw new HttpException('Lỗi dữ liệu', HttpStatus.BAD_REQUEST);
+
+  // ✅ Luôn thay thế hoàn toàn — 1 khu vực chỉ có 1 operator
+  area.operators = [user];
+  await this.areaRepo.save(area);
+
+  return { user: user.username, area: area.area_name };
+}
 
   async updateAreaSettings(id: number, data: any) {
     const area = await this.areaRepo.findOne({
       where: { id },
-      relations: ['warehouse', 'food_types'],
+      relations: ['warehouse', 'food_types', 'operators'], // ✅ thêm operators
     });
     if (!area)
       throw new HttpException('Không tìm thấy Khu vực!', HttpStatus.NOT_FOUND);
@@ -219,6 +297,17 @@ export class FacilitiesService {
       area.food_types = data.food_type_ids.length > 0
         ? await this.foodTypeRepo.findBy(data.food_type_ids.map((fid: number) => ({ id: fid })))
         : [];
+    }
+
+    // ✅ Cập nhật operator: luôn replace, không append
+    if (data.operator_id !== undefined) {
+      if (data.operator_id) {
+        const user = await this.userRepo.findOne({ where: { id: data.operator_id } });
+        if (!user) throw new HttpException('Không tìm thấy người dùng', HttpStatus.NOT_FOUND);
+        area.operators = [user]; // thay thế hoàn toàn
+      } else {
+        area.operators = []; // bỏ phân công
+      }
     }
 
     if (data.operating_mode !== undefined) {

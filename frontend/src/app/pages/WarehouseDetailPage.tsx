@@ -2,7 +2,7 @@
 import { useParams, useNavigate } from 'react-router';
 import {
   Thermometer, Droplets, Cpu, Plus, Pencil, Trash2,
-  X, ChevronRight, Home, Layers, ArrowRight, Apple
+  X, ChevronRight, Home, Layers, ArrowRight, Apple, User
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
@@ -18,7 +18,8 @@ import {
 export function WarehouseDetailPage() {
   const { warehouseId } = useParams();
   const navigate = useNavigate();
-
+  const currentUser = JSON.parse(localStorage.getItem('current_user') ?? '{}');
+  const isAdmin = currentUser?.role?.toUpperCase() === 'ADMIN';
   const [warehouse, setWarehouse] = useState<WarehouseApi | null>(null);
   const [foodTypes, setFoodTypes] = useState<FoodTypeApi[]>([]);
   const [operators, setOperators] = useState<UserApi[]>([]);
@@ -45,9 +46,20 @@ export function WarehouseDetailPage() {
         getUsers(),
       ]);
       const wh = whRes.data.data.find(w => w.id === Number(warehouseId));
-      setWarehouse(wh || null);
+      if (!wh) {
+        navigate('/warehouses');
+        return;
+      }
+
+      // ✅ OPERATOR chỉ thấy area được phân công — BE đã lọc, nhưng filter thêm FE để chắc chắn
+      if (!isAdmin) {
+        wh.areas = wh.areas.filter(a =>
+          a.operators?.some(op => op.id === currentUser?.id)
+        );
+      }
+
+      setWarehouse(wh);
       setFoodTypes(ftRes.data.data);
-      // Lọc OPERATOR (BE trả về 'OPERATOR' viết hoa)
       setOperators(usersRes.data.data.filter(u =>
         u.role?.toUpperCase() === 'OPERATOR'
       ));
@@ -111,7 +123,7 @@ export function WarehouseDetailPage() {
       operating_mode: area.operating_mode as 'AUTO' | 'MANUAL',
       auto_door_timeout_sec: area.auto_door_timeout_sec,
       manual_override_mins: area.manual_override_mins,
-      operator_id: '',
+       operator_id: area.operators?.[0]?.id ?? '',
     });
     setShowAreaModal(true);
   };
@@ -147,6 +159,7 @@ export function WarehouseDetailPage() {
           operating_mode: formData.operating_mode,
           auto_door_timeout_sec: formData.auto_door_timeout_sec,
           manual_override_mins: formData.manual_override_mins,
+          operator_id: formData.operator_id || null,
         });
         if (formData.operator_id) {
           await assignOperator(editingArea.id, formData.operator_id as number);
@@ -159,11 +172,9 @@ export function WarehouseDetailPage() {
           operating_mode: formData.operating_mode,
           auto_door_timeout_sec: formData.auto_door_timeout_sec,
           manual_override_mins: formData.manual_override_mins,
+          operator_id: formData.operator_id || null,
         });
-        const newAreaId = newAreaRes.data?.data?.id;
-        if (newAreaId && formData.operator_id) {
-          await assignOperator(newAreaId, formData.operator_id as number);
-        }
+        
       }
       await fetchData();
       setShowAreaModal(false);
@@ -232,12 +243,14 @@ export function WarehouseDetailPage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Khu vực trong kho</h2>
-          <button
-            onClick={handleAddArea}
-            className="flex items-center gap-2 bg-[#2ECC71] text-white px-4 py-2 rounded-lg hover:bg-[#27AE60] transition-colors font-bold shadow-sm"
-          >
-            <Plus className="w-5 h-5" /> Thêm khu vực
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleAddArea}
+              className="flex items-center gap-2 bg-[#2ECC71] text-white px-4 py-2 rounded-lg hover:bg-[#27AE60] transition-colors font-bold shadow-sm"
+            >
+              <Plus className="w-5 h-5" /> Thêm khu vực
+            </button>
+          )}
         </div>
 
         {areas.length > 0 ? (
@@ -269,25 +282,27 @@ export function WarehouseDetailPage() {
                   }`}
                 >
                   {/* Edit/Delete buttons — hiện khi hover */}
-                  <div
-                    className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <button
-                      onClick={e => handleEditArea(area, e)}
-                      className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                      title="Chỉnh sửa"
+                  {isAdmin && (
+                    <div
+                      className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                      onClick={e => e.stopPropagation()}
                     >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={e => handleDeleteArea(area, e)}
-                      className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:text-red-600 transition-colors"
-                      title="Xóa khu vực"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <button
+                        onClick={e => handleEditArea(area, e)}
+                        className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                        title="Chỉnh sửa"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={e => handleDeleteArea(area, e)}
+                        className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:text-red-600 transition-colors"
+                        title="Xóa khu vực"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Header */}
                   <div className="mb-3 pr-20">
@@ -344,7 +359,20 @@ export function WarehouseDetailPage() {
                       ))}
                     </div>
                   )}
-
+                  {/* Người vận hành */}
+                  {area.operators && area.operators.length > 0 ? (
+                    <div className="mb-3 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-xs text-gray-500">
+                        {area.operators.map(o => o.full_name || o.username).join(', ')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mb-3 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-gray-300" />
+                      <span className="text-xs text-gray-300 italic">Chưa phân công</span>
+                    </div>
+                  )}
                   {/* Footer */}
                   <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                     <div className="flex items-center gap-3">
@@ -497,19 +525,21 @@ export function WarehouseDetailPage() {
               </div>
 
               {/* Người vận hành */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5">Người vận hành</label>
-                <select
-                  value={formData.operator_id}
-                  onChange={e => setFormData({ ...formData, operator_id: e.target.value ? Number(e.target.value) : '' })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
-                >
-                  <option value="">Chưa phân công</option>
-                  {operators.map(u => (
-                    <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
-                  ))}
-                </select>
-              </div>
+              {isAdmin && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Người vận hành</label>
+                  <select
+                    value={formData.operator_id}
+                    onChange={e => setFormData({ ...formData, operator_id: e.target.value ? Number(e.target.value) : '' })}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+                  >
+                    <option value="">Chưa phân công</option>
+                    {operators.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                 <button

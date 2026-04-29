@@ -6,11 +6,14 @@ import {
   Delete,
   Body,
   Param,
+  Query
 } from '@nestjs/common';
 import { FacilitiesService } from './facilities.service';
 import { Warehouse } from '../entities/warehouse.entity';
 import { Area } from '../entities/area.entity';
 import { FoodType } from '../entities/food-type.entity';
+import { Req } from '@nestjs/common';
+import type { Request } from 'express';
 
 @Controller('api')
 export class FacilitiesController {
@@ -19,12 +22,12 @@ export class FacilitiesController {
   // ==================== WAREHOUSE CRUD ====================
 
   @Get('warehouses')
-  async getAllWarehouses() {
-    return {
-      status: 'success',
-      data: await this.facilitiesService.getAllWarehouses(),
-    };
-  }
+async getAllWarehouses(@Query('user_id') userId?: string) {
+  const data = userId
+    ? await this.facilitiesService.getWarehousesByOperator(Number(userId))
+    : await this.facilitiesService.getAllWarehouses();
+  return { status: 'success', data };
+}
 
   // ⚠️ Phải đặt TRƯỚC :id để tránh nhầm 'dashboard' thành id
   @Get('warehouses/dashboard')
@@ -34,7 +37,7 @@ export class FacilitiesController {
       data: await this.facilitiesService.getDashboardData(),
     };
   }
-
+ 
   @Get('warehouses/:id')
   async getWarehouseById(@Param('id') id: number) {
     return {
