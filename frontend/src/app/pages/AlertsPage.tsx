@@ -18,62 +18,108 @@ interface Alert {
   min: number;
   max: number;
   acknowledged: boolean;
+  createdAt: string;
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  status?: 'active' | 'resolved';
+}
+
+const ALERTS_STORAGE_KEY = 'alerts_v2';
+const LEGACY_ALERTS_STORAGE_KEY = 'alerts';
+const ALERT_RETENTION_DAYS = 30;
+const ALERT_RETENTION_MS = ALERT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+function isWithinRetention(createdAt?: string): boolean {
+  if (!createdAt) return false;
+  const ts = new Date(createdAt).getTime();
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts <= ALERT_RETENTION_MS;
+}
+
+function makeEventId(params: {
+  type: 'temperature' | 'humidity';
+  areaId: number;
+  direction: 'low' | 'high';
+}) {
+  return `${params.type}-${params.areaId}-${params.direction}`;
 }
 
 function buildAlerts(areas: AreaApi[], warehouseName: string): Alert[] {
   const result: Alert[] = [];
-
+  
   areas.forEach(area => {
-    const food: FoodTypeApi | null = area.current_food_type;
+    // ✅ FIX 1: lấy food đúng
+    const food: FoodTypeApi | null = area.food_types?.[0] || null;
     if (!food) return;
 
-    const sensors = area.devices.filter(d => d.device_type?.toUpperCase() === 'SENSOR');
-
-    const tempSensor = sensors.find(d =>
-      d.device_name?.toLowerCase().includes('nhiệt') ||
-      d.adafruit_feed_key?.toLowerCase().includes('temp') ||
-      d.adafruit_feed_key?.toLowerCase().includes('nhiet')
+    // ✅ FIX 2: lấy đúng sensor
+    const sensors = area.devices.filter(d =>
+      ['SENSOR', 'TEMP', 'HUMI'].includes(d.device_type?.toUpperCase())
     );
+
+    // ✅ FIX 3: tìm sensor chuẩn hơn
+    const tempSensor = sensors.find(d =>
+      d.device_type?.toUpperCase() === 'TEMP' ||
+      d.adafruit_feed_key?.toLowerCase().includes('temp')
+    );
+
     const humiSensor = sensors.find(d =>
-      d.device_name?.toLowerCase().includes('ẩm') ||
-      d.adafruit_feed_key?.toLowerCase().includes('humi') ||
-      d.adafruit_feed_key?.toLowerCase().includes('am')
+      d.device_type?.toUpperCase() === 'HUMI' ||
+      d.adafruit_feed_key?.toLowerCase().includes('humi')
     );
 
     const currentTemp = tempSensor?.latest_value ?? null;
     const currentHumi = humiSensor?.latest_value ?? null;
 
-    if (currentTemp !== null && (currentTemp < food.min_temp || currentTemp > food.max_temp)) {
-      const diff = Math.abs(currentTemp - (currentTemp < food.min_temp ? food.min_temp : food.max_temp));
+    // ===== TEMP =====
+    if (
+      currentTemp !== null &&
+      (currentTemp < food.min_temp || currentTemp > food.max_temp)
+    ) {
+      const isLow = currentTemp < food.min_temp;
+      const direction: 'low' | 'high' = isLow ? 'low' : 'high';
+      const diff = Math.abs(currentTemp - (isLow ? food.min_temp : food.max_temp));
+
       result.push({
-        id: `temp-${area.id}`,
+        id: makeEventId({ type: 'temperature', areaId: area.id, direction }),
         areaId: area.id,
         areaName: area.area_name,
         warehouseName,
         type: 'temperature',
         severity: diff > 2 ? 'critical' : 'warning',
-        message: `Nhiệt độ ${currentTemp < food.min_temp ? 'thấp hơn' : 'cao hơn'} ngưỡng cho phép (${food.food_name})`,
+        message: `Nhiệt độ ${isLow ? 'thấp hơn' : 'cao hơn'} ngưỡng (${food.food_name})`,
         value: currentTemp,
         min: food.min_temp,
         max: food.max_temp,
         acknowledged: false,
+        createdAt: new Date().toISOString(),
+        status: 'active',
       });
     }
 
-    if (currentHumi !== null && (currentHumi < food.min_humi || currentHumi > food.max_humi)) {
-      const diff = Math.abs(currentHumi - (currentHumi < food.min_humi ? food.min_humi : food.max_humi));
+    // ===== HUMI =====
+    if (
+      currentHumi !== null &&
+      (currentHumi < food.min_humi || currentHumi > food.max_humi)
+    ) {
+      const isLow = currentHumi < food.min_humi;
+      const direction: 'low' | 'high' = isLow ? 'low' : 'high';
+      const diff = Math.abs(currentHumi - (isLow ? food.min_humi : food.max_humi));
+
       result.push({
-        id: `humi-${area.id}`,
+        id: makeEventId({ type: 'humidity', areaId: area.id, direction }),
         areaId: area.id,
         areaName: area.area_name,
         warehouseName,
         type: 'humidity',
         severity: diff > 5 ? 'critical' : 'warning',
-        message: `Độ ẩm ${currentHumi < food.min_humi ? 'thấp hơn' : 'cao hơn'} ngưỡng cho phép (${food.food_name})`,
+        message: `Độ ẩm ${isLow ? 'thấp hơn' : 'cao hơn'} ngưỡng (${food.food_name})`,
         value: currentHumi,
         min: food.min_humi,
         max: food.max_humi,
         acknowledged: false,
+        createdAt: new Date().toISOString(),
+        status: 'active',
       });
     }
   });
@@ -85,6 +131,29 @@ export function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  // ===== LOAD LOCAL =====
+  useEffect(() => {
+    const savedV2 = localStorage.getItem(ALERTS_STORAGE_KEY);
+    const savedLegacy = localStorage.getItem(LEGACY_ALERTS_STORAGE_KEY);
+    const raw = savedV2 || savedLegacy;
+    if (raw) {
+      try {
+        const parsed: Alert[] = JSON.parse(raw);
+        const pruned = parsed
+          .filter((a) => isWithinRetention(a.createdAt))
+          .map((a) => ({ ...a, status: a.status ?? (a.acknowledged ? 'resolved' : 'active') }));
+        setAlerts(pruned);
+      } catch (e) {
+        console.error('Lỗi parse local alerts:', e);
+      }
+    }
+  }, []);
+
+  // ===== SAVE LOCAL =====
+  useEffect(() => {
+    localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(alerts));
+  }, [alerts]);
+
 
   const fetchAndBuildAlerts = async () => {
     try {
@@ -97,11 +166,34 @@ export function AlertsPage() {
         newAlerts.push(...built);
       });
 
-      // Giữ lại trạng thái acknowledged từ lần trước
-      setAlerts(prev => newAlerts.map(a => ({
-        ...a,
-        acknowledged: prev.find(p => p.id === a.id)?.acknowledged ?? false,
-      })));
+      // Merge với bản cũ để giữ firstDetected/ack metadata
+      setAlerts(prev => {
+        const prevMap = new Map(prev.map((a) => [a.id, a]));
+        const incomingMap = new Map(newAlerts.map((a) => [a.id, a]));
+
+        const mergedActive = newAlerts.map((a) => {
+          const old = prevMap.get(a.id);
+          return {
+            ...a,
+            acknowledged: old?.acknowledged ?? false,
+            createdAt: old?.createdAt ?? a.createdAt, // first detected time
+            acknowledgedAt: old?.acknowledgedAt,
+            acknowledgedBy: old?.acknowledgedBy,
+            status: 'active' as const,
+          };
+        });
+
+        const resolvedHistory = prev
+          .filter((old) => !incomingMap.has(old.id))
+          .map((old) => ({
+            ...old,
+            status: 'resolved' as const,
+          }))
+          .filter((old) => isWithinRetention(old.createdAt));
+
+        return [...mergedActive, ...resolvedHistory];
+      });
+
       setLastRefresh(new Date());
     } catch (err) {
       console.error('Lỗi lấy alerts:', err);
@@ -117,12 +209,27 @@ export function AlertsPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // ===== ACKNOWLEDGE =====
   const handleAcknowledge = (id: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a));
+    const currentUser = JSON.parse(localStorage.getItem('current_user') || 'null');
+    const acknowledgedBy = currentUser?.full_name || currentUser?.username || 'Unknown';
+
+    setAlerts(prev =>
+      prev.map(a =>
+        a.id === id
+          ? {
+              ...a,
+              acknowledged: true,
+              acknowledgedAt: new Date().toISOString(),
+              acknowledgedBy,
+            }
+          : a
+      )
+    );
   };
 
-  const activeAlerts = alerts.filter(a => !a.acknowledged);
-  const acknowledgedAlerts = alerts.filter(a => a.acknowledged);
+  const activeAlerts = alerts.filter(a => a.status !== 'resolved' && !a.acknowledged);
+  const acknowledgedAlerts = alerts.filter(a => a.acknowledged && isWithinRetention(a.createdAt));
 
   return (
     <div className="p-8 space-y-6">

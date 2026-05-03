@@ -2,7 +2,7 @@
 import { useParams, useNavigate } from 'react-router';
 import {
   Thermometer, Droplets, Tag, Power, PowerOff,
-  Plus, Pencil, Trash2, X, ChevronRight
+  Plus, Pencil, Trash2, X, ChevronRight, Calendar
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useState, useEffect } from 'react';
@@ -27,6 +27,11 @@ const emptyDeviceForm = {
   status: 'ONLINE',
 };
 
+const toDateInputValue = (date: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
 export function AreaDetailPage() {
   const { warehouseId, areaId } = useParams();
   const navigate = useNavigate();
@@ -35,6 +40,9 @@ export function AreaDetailPage() {
   const [area, setArea] = useState<AreaApi | null>(null);
   const [tempHistory, setTempHistory] = useState<SensorReadingApi[]>([]);
   const [humiHistory, setHumiHistory] = useState<SensorReadingApi[]>([]);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [historyError, setHistoryError] = useState<string>('');
   const [allFoodTypes, setAllFoodTypes] = useState<FoodTypeApi[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -63,12 +71,6 @@ export function AreaDetailPage() {
       setArea(foundArea || null);
       if (foundArea) {
         setSelectedFoodTypeId(foundArea.current_food_type?.id ?? null);
-        const [tempRes, humiRes] = await Promise.all([
-          getSensorHistory({ type: 'TEMP', area_id: foundArea.id, limit: 20 }),
-          getSensorHistory({ type: 'HUMI', area_id: foundArea.id, limit: 20 }),
-        ]);
-        setTempHistory(tempRes.data.data);
-        setHumiHistory(humiRes.data.data);
       }
       setAllFoodTypes(foodRes.data.data);
     } catch (err) {
@@ -79,6 +81,48 @@ export function AreaDetailPage() {
   };
 
   useEffect(() => { fetchAll(); }, [warehouseId, areaId]);
+
+  useEffect(() => {
+    const fetchHistoryByDateRange = async () => {
+      if (!area?.id) return;
+      const today = toDateInputValue(new Date());
+      const effectiveStartDate = startDate || today;
+      const effectiveEndDate = endDate || today;
+
+      if (effectiveStartDate > effectiveEndDate) {
+        setHistoryError('Ngày bắt đầu không được lớn hơn ngày kết thúc.');
+        setTempHistory([]);
+        setHumiHistory([]);
+        return;
+      }
+      setHistoryError('');
+
+      try {
+        const [tempRes, humiRes] = await Promise.all([
+          getSensorHistory({
+            type: 'TEMP',
+            area_id: area.id,
+            start_time: `${effectiveStartDate} 00:00:00`,
+            end_time: `${effectiveEndDate} 23:59:59`,
+            limit: 1000
+          }),
+          getSensorHistory({
+            type: 'HUMI',
+            area_id: area.id,
+            start_time: `${effectiveStartDate} 00:00:00`,
+            end_time: `${effectiveEndDate} 23:59:59`,
+            limit: 1000
+          }),
+        ]);
+        setTempHistory(tempRes.data.data);
+        setHumiHistory(humiRes.data.data);
+      } catch (err) {
+        console.error('Lỗi load lịch sử cảm biến:', err);
+      }
+    };
+
+    fetchHistoryByDateRange();
+  }, [area?.id, startDate, endDate]);
 
   if (loading) return <div className="p-8 flex items-center justify-center min-h-screen text-gray-500">Đang tải dữ liệu...</div>;
   if (!area) return <div className="p-8 text-gray-500">Không tìm thấy khu vực</div>;
@@ -93,13 +137,21 @@ export function AreaDetailPage() {
   const currentHumi = humiSensor?.latest_value ?? null;
   const tempWarning = food && currentTemp !== null ? (currentTemp < food.min_temp || currentTemp > food.max_temp) : false;
   const humiWarning = food && currentHumi !== null ? (currentHumi < food.min_humi || currentHumi > food.max_humi) : false;
+  const today = toDateInputValue(new Date());
+  const effectiveStartDate = startDate || today;
+  const effectiveEndDate = endDate || today;
+  const isMultiDayRange = effectiveStartDate !== effectiveEndDate;
 
   const tempChartData = tempHistory.map((r: SensorReadingApi) => ({
-    time: new Date(r.recorded_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    time: isMultiDayRange
+      ? new Date(r.recorded_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : new Date(r.recorded_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     value: r.reading_value
   }));
   const humiChartData = humiHistory.map((r: SensorReadingApi) => ({
-    time: new Date(r.recorded_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    time: isMultiDayRange
+      ? new Date(r.recorded_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : new Date(r.recorded_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     value: r.reading_value
   }));
 
@@ -272,10 +324,51 @@ export function AreaDetailPage() {
         </div>
       </div>
 
+      
+      {/* Filter card */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <h2 className="font-semibold text-gray-900 mb-4">Lọc lịch sử theo thời gian</h2>
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Calendar className="w-4 h-4 inline mr-2" />
+              Từ ngày
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Calendar className="w-4 h-4 inline mr-2" />
+              Đến ngày
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              max={toDateInputValue(new Date())}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2ECC71]"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">Để trống sẽ lấy dữ liệu ngày hiện tại.</p>
+        {historyError && <p className="text-xs text-red-600 mt-3">{historyError}</p>}
+      </div>
+
       {/* Charts */}
-      {tempChartData.length > 0 && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">Lịch sử nhiệt độ</h2>
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <h2 className="font-semibold text-gray-900 mb-4">Lịch sử nhiệt độ</h2>
+        {tempChartData.length === 0 ? (
+          <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
+            Chưa có dữ liệu cảm biến
+          </div>
+        ) : (
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={tempChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -285,12 +378,16 @@ export function AreaDetailPage() {
               <Line type="monotone" dataKey="value" stroke="#E74C3C" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      )}
+        )}
+      </div>
 
-      {humiChartData.length > 0 && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">Lịch sử độ ẩm</h2>
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <h2 className="font-semibold text-gray-900 mb-4">Lịch sử độ ẩm</h2>
+        {humiChartData.length === 0 ? (
+          <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
+            Chưa có dữ liệu cảm biến
+          </div>
+        ) : (
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={humiChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -300,8 +397,8 @@ export function AreaDetailPage() {
               <Line type="monotone" dataKey="value" stroke="#3498DB" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Danh sách thiết bị */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">

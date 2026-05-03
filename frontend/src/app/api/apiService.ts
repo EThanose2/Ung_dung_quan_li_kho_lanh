@@ -201,6 +201,8 @@ export function getLatestSensors(area_id?: number) {
 export function getSensorHistory(params: {
   type: "TEMP" | "HUMI" | "LIGHT";
   area_id?: number;
+  start_time?: string;
+  end_time?: string;
   limit?: number;
 }) {
   return axiosClient.get<{ status: string; data: SensorReadingApi[] }>(
@@ -277,4 +279,19 @@ export function updateSchedule(id: number, body: Partial<{ action: string; start
  
 export function deleteSchedule(id: number) {
   return axiosClient.delete<{ status: string }>(`/devices/schedules/${id}`);
+}
+
+// ================================================================
+// REPORTS
+// ================================================================
+
+export function generateExportCsv(params: {
+  area_id?: number;
+  start_time?: string;
+  end_time?: string;
+}) {
+  return axiosClient.get<string>("sensors/export", {
+    params,
+    responseType: "text", // nhận CSV dạng string
+  });
 }
