@@ -45,4 +45,10 @@ export class ActionLog {
 
   @Column({ default: false })
   is_escalated: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  resolved_at: Date; // Thời gian bấm xác nhận
+
+  @Column({ type: 'text', nullable: true })
+  resolve_note: string; // Lý do xử lý (VD: "Đã đóng cửa kho")
 }

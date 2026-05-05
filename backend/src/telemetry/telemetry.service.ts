@@ -36,10 +36,11 @@ export class TelemetryService {
   }
 
   // Lấy Log hệ thống
-  async getActionLogs(limit: number) {
+  async getActionLogs(limit: number = 20) {
     return await this.actionLogRepo
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.area', 'area')
+      .leftJoinAndSelect('log.user', 'user') // 🌟 Dòng sinh tử để bả lấy tên nè!
       .orderBy('log.created_at', 'DESC')
       .take(limit)
       .getMany();
