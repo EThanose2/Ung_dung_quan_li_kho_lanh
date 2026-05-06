@@ -57,12 +57,12 @@ export interface SensorReadingApi {
   device: DeviceApi;
 }
 
-export interface ActionLogApi {
-  id: number;
-  action_type: string;
-  action_value: string;
-  created_at: string;
-}
+// export interface ActionLogApi {
+//   id: number;
+//   action_type: string;
+//   action_value: string;
+//   created_at: string;
+// }
 
 // ================================================================
 // AUTH
@@ -295,3 +295,25 @@ export function generateExportCsv(params: {
     responseType: "text", // nhận CSV dạng string
   });
 }
+
+export interface ActionLogApi {
+  id: number;
+  action_type: string;
+  action_value: string;
+  created_at: string;
+  is_resolved: boolean;
+  resolved_at?: string; 
+  resolve_note?: string; 
+  user?: {
+    id: number;
+    full_name: string;
+    username: string;
+  };
+}
+
+export const resolveAlert = (logId: number, note: string, user_id: number) => {
+  return axiosClient.put<{ status: string; message: string }>(
+    `/action-logs/${logId}/resolve`,
+    { note, user_id }
+  );
+};
