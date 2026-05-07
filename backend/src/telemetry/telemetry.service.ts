@@ -40,7 +40,10 @@ export class TelemetryService {
     return await this.actionLogRepo
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.area', 'area')
-      .leftJoinAndSelect('log.user', 'user') // 🌟 Dòng sinh tử để bả lấy tên nè!
+      .leftJoinAndSelect('log.user', 'user')
+      .where('log.action_type IN (:...types)', {
+        types: ['TEMP_ALERT', 'HUMI_ALERT', 'DOOR_WARNING', 'EMERGENCY_SOS'],
+      })
       .orderBy('log.created_at', 'DESC')
       .take(limit)
       .getMany();

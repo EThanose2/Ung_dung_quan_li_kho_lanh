@@ -13,10 +13,10 @@ import { ActionLog } from '../entities/action-log.entity';
 export class MqttService implements OnModuleInit {
   private client: mqtt.MqttClient;
 
-  // 🌟 RAM ẢO - Sổ tay nhớ Cửa mở
+  // RAM ẢO - Sổ tay nhớ Cửa mở
   private doorTimers = new Map<number, NodeJS.Timeout>();
 
-  // 🌟 RAM ẢO - Sổ tay nhớ lệnh "Nhường quyền cho sếp" (Cooldown)
+  // RAM ẢO - Sổ tay nhớ lệnh "Nhường quyền cho sếp" (Cooldown)
   private manualOverrides = new Map<number, number>();
 
   constructor(
@@ -58,7 +58,7 @@ export class MqttService implements OnModuleInit {
       // 1. TÌM THIẾT BỊ TRONG DATABASE
       const device = await this.deviceRepo.findOne({
         where: { adafruit_feed_key: feedKey },
-        relations: ['area', 'area.current_food_type'],
+        relations: ['area', 'area.food_types'],
       });
 
       if (!device) return;
@@ -81,10 +81,10 @@ export class MqttService implements OnModuleInit {
         device.status = value;
         await this.deviceRepo.save(device);
 
-        // 🚪 LOGIC CẢM BIẾN CỬA (Có nhớ quá khứ 30s)
+        // LOGIC CẢM BIẾN CỬA (Có nhớ quá khứ 30s)
         if (device.device_type === 'DOOR_SENSOR' && areaId) {
           if (value === '1' || value === 'ON') {
-            console.log(`🚪 Cửa khu vực [${area.area_name}] ĐANG MỞ!`);
+            console.log(`Cửa khu vực [${area.area_name}] ĐANG MỞ!`);
             this.publishToAdafruit('den1', 'MODE_1');
 
             if (!this.doorTimers.has(areaId)) {
@@ -92,7 +92,7 @@ export class MqttService implements OnModuleInit {
 
               const timer = setTimeout(() => {
                 console.log(
-                  `🚨 Cảnh báo: Cửa [${area.area_name}] mở quá ${timeoutSec} giây!`,
+                  `Cảnh báo: Cửa [${area.area_name}] mở quá ${timeoutSec} giây!`,
                 );
                 this.publishToAdafruit('led_matrix', 'YELLOW_BLINK');
 
@@ -110,7 +110,7 @@ export class MqttService implements OnModuleInit {
               this.doorTimers.set(areaId, timer);
             }
           } else if (value === '0' || value === 'OFF') {
-            console.log(`✅ Cửa khu vực [${area.area_name}] Đã đóng.`);
+            console.log(`Cửa khu vực [${area.area_name}] Đã đóng.`);
             this.publishToAdafruit('den1', 'OFF');
             this.publishToAdafruit('led_matrix', 'GREEN');
 
@@ -121,7 +121,7 @@ export class MqttService implements OnModuleInit {
           }
         }
 
-        // 🚨 NÚT KHẨN CẤP SOS
+        // NÚT KHẨN CẤP SOS
         if (device.device_type === 'EMERGENCY_BTN') {
           if (value === '1' || value === 'ON') {
             console.log(`KHẨN CẤP! Báo động tại [${area?.area_name}]!`);
@@ -170,12 +170,14 @@ export class MqttService implements OnModuleInit {
         );
 
         // Tách cờ rõ ràng và chuẩn bị biến lưu Log
+        // Tách cờ rõ ràng và chuẩn bị biến lưu Log
         let isTooHot = false;
         let isTooCold = false;
         let isWarning = false;
         let isNormal = false;
         let alertType = '';
         let unit = '';
+        let typeName = '';
 
         // Phân luồng Nhiệt độ và Độ ẩm
         if (device.device_type === 'TEMP') {
@@ -187,6 +189,7 @@ export class MqttService implements OnModuleInit {
             numericValue >= safeZone.minT && numericValue <= safeZone.maxT;
           alertType = 'TEMP_ALERT';
           unit = '°C';
+          typeName = 'Nhiệt độ';
         } else if (device.device_type === 'HUMI') {
           isTooHot = numericValue > safeZone.maxH;
           isTooCold = numericValue < safeZone.minH;
@@ -196,8 +199,10 @@ export class MqttService implements OnModuleInit {
             numericValue >= safeZone.minH && numericValue <= safeZone.maxH;
           alertType = 'HUMI_ALERT';
           unit = '%';
+          typeName = 'Độ ẩm';
         }
-         // ==========================================
+
+        // ==========================================
         // THỰC THI LOGIC DỰA TRÊN CÁC CỜ ĐÃ TÍNH
         // ==========================================
         const opMode = (area as any).operating_mode || 'AUTO';
@@ -219,14 +224,15 @@ export class MqttService implements OnModuleInit {
           // 1. NẾU QUÁ NÓNG / QUÁ ẨM -> BẬT QUẠT LÀM MÁT
           if (isTooHot) {
             console.log(
-              `CRITICAL! Khu vực [${area.area_name}] QUÁ NÓNG/ẨM! Auto bật Quạt...`,
+              `CRITICAL! Khu vực [${area.area_name}] ${typeName} QUÁ CAO! Auto bật Quạt...`,
             );
             this.publishToAdafruit('quat1', 'ON');
             this.publishToAdafruit('led_matrix', 'RED_BLINK');
+            
             await this.logRepo.save(
               this.logRepo.create({
-                action_type: alertType,
-                action_value: `Quá ngưỡng trên (${numericValue}${unit}). Auto BẬT quạt.`,
+                action_type: alertType, // Nó sẽ tự lấy TEMP_ALERT hoặc HUMI_ALERT
+                action_value: `${typeName} vượt ngưỡng trên (${numericValue}${unit}). Đã auto BẬT quạt.`,
                 trigger_source: 'AUTO',
                 area,
                 device,
@@ -236,15 +242,17 @@ export class MqttService implements OnModuleInit {
             this.appGateway.emitRealtimeData('critical_alert', {
               areaId,
               areaName: area.area_name,
-              message: `CRITICAL: Quá nhiệt/ẩm (${numericValue}${unit}). Quạt đã bật!`,
+              message: `CRITICAL: ${typeName} quá cao (${numericValue}${unit}). Quạt đã bật!`,
               operatorIds: area.operators
                 ? area.operators.map((op) => op.id)
                 : [],
             });
-          }
+            
+          } 
+          // 2. NẾU QUÁ LẠNH / QUÁ KHÔ
           else if (isTooCold) {
             console.log(
-              `CRITICAL! Khu vực [${area.area_name}] QUÁ LẠNH/KHÔ! Auto tắt Quạt...`,
+              `CRITICAL! Khu vực [${area.area_name}] ${typeName} QUÁ THẤP! Auto tắt Quạt...`,
             );
             this.publishToAdafruit('quat1', 'OFF');
             this.publishToAdafruit('led_matrix', 'RED_BLINK');
@@ -252,7 +260,7 @@ export class MqttService implements OnModuleInit {
             await this.logRepo.save(
               this.logRepo.create({
                 action_type: alertType,
-                action_value: `Quá ngưỡng dưới (${numericValue}${unit}). Yêu cầu kiểm tra.`,
+                action_value: `${typeName} vượt ngưỡng dưới (${numericValue}${unit}). Yêu cầu kiểm tra.`,
                 trigger_source: 'AUTO',
                 area,
                 device,
@@ -262,16 +270,60 @@ export class MqttService implements OnModuleInit {
             this.appGateway.emitRealtimeData('critical_alert', {
               areaId,
               areaName: area.area_name,
-              message: `CRITICAL: Quá lạnh/khô (${numericValue}${unit}). Yêu cầu kiểm tra!`,
+              message: `CRITICAL: ${typeName} quá thấp (${numericValue}${unit}). Yêu cầu kiểm tra!`,
               operatorIds: area.operators
                 ? area.operators.map((op) => op.id)
                 : [],
             });
-          }
+            
+          } 
+          // 3. NẾU AN TOÀN (Logic chéo hàng xóm sếp cứ giữ nguyên)
           else if (isNormal) {
-            console.log(`Chỉ số an toàn (${numericValue}${unit}). Tắt quạt!`);
-            this.publishToAdafruit('quat1', 'OFF');
-            this.publishToAdafruit('led_matrix', 'GREEN');
+            // 1. Xác định thằng "hàng xóm" là ai (TEMP <-> HUMI)
+            const neighborType =
+              device.device_type === 'TEMP' ? 'HUMI' : 'TEMP';
+
+            // 2. Kéo số liệu mới nhất của thằng hàng xóm lên
+            const latestNeighborReading = await this.readingRepo.findOne({
+              where: {
+                device: {
+                  device_type: neighborType,
+                  area: { id: areaId },
+                },
+              },
+              order: { recorded_at: 'DESC' },
+            });
+
+            let isNeighborSafe = true;
+
+            // 3. Đọ số liệu hàng xóm với safeZone
+            if (latestNeighborReading) {
+              const val = latestNeighborReading.reading_value;
+              if (
+                neighborType === 'TEMP' &&
+                (val > safeZone.maxT || val < safeZone.minT)
+              ) {
+                isNeighborSafe = false;
+              } else if (
+                neighborType === 'HUMI' &&
+                (val > safeZone.maxH || val < safeZone.minH)
+              ) {
+                isNeighborSafe = false;
+              }
+            }
+
+            // 4. Phán quyết: Cả 2 đều an toàn mới cho tắt quạt
+            if (isNeighborSafe) {
+              console.log(
+                `Chỉ số ${device.device_type} an toàn (${numericValue}${unit}) và ${neighborType} cũng an toàn. TẮT QUẠT!`,
+              );
+              this.publishToAdafruit('quat1', 'OFF');
+              this.publishToAdafruit('led_matrix', 'GREEN');
+            } else {
+              console.log(
+                `Chỉ số ${device.device_type} an toàn, nhưng ${neighborType} đang báo động. GIỮ NGUYÊN QUẠT!`,
+              );
+            }
           }
         }
       }
@@ -281,11 +333,11 @@ export class MqttService implements OnModuleInit {
   // ==========================================
   // HÀM MỚI: KÍCH HOẠT NHƯỜNG QUYỀN CHO SẾP (MANUAL COOLDOWN)
   // ==========================================
-  public setManualCooldown(areaId: number, cooldownMins: number = 30) {
+  public setManualCooldown(areaId: number, cooldownMins: number = 2) {
     const expireTime = Date.now() + cooldownMins * 60 * 1000;
     this.manualOverrides.set(areaId, expireTime);
     console.log(
-      `🖐️ Kích hoạt Ghi đè thủ công cho Khu [${areaId}] trong ${cooldownMins} phút. Auto sẽ tạm dừng.`,
+      `Kích hoạt Ghi đè thủ công cho Khu [${areaId}] trong ${cooldownMins} phút. Auto sẽ tạm dừng.`,
     );
   }
 
@@ -325,7 +377,7 @@ export class MqttService implements OnModuleInit {
     this.client.publish(`${adafruitUser}/feeds/${feedKey}`, value);
   }
 
-   @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE)
   async dynamicScheduledControl() {
     const now = new Date();
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -343,7 +395,7 @@ export class MqttService implements OnModuleInit {
       const area = device.area;
       if (!area) continue;
 
-      // 🛑 THỰC THI THỨ TỰ ƯU TIÊN BR-13 🛑
+      // THỰC THI THỨ TỰ ƯU TIÊN BR-13
 
       // ƯU TIÊN 1: Nếu Khu vực đang có Manual Override -> Bỏ qua lịch của thiết bị này
       if (this.manualOverrides.has(area.id)) {
@@ -360,15 +412,15 @@ export class MqttService implements OnModuleInit {
         continue;
       }
 
-      // ✅ NẾU RẢNH RỖI -> THỰC THI LỊCH CHO TỪNG CON
+      // NẾU RẢNH RỖI -> THỰC THI LỊCH CHO TỪNG CON
       if (currentTime === device.schedule_on_time) {
         console.log(
-          `⏰ Lập lịch: BẬT ${device.device_name} tại ${area.area_name}`,
+          `Lập lịch: BẬT ${device.device_name} tại ${area.area_name}`,
         );
         this.publishToAdafruit(device.adafruit_feed_key, 'ON');
       } else if (currentTime === device.schedule_off_time) {
         console.log(
-          `⏰ Lập lịch: TẮT ${device.device_name} tại ${area.area_name}`,
+          `Lập lịch: TẮT ${device.device_name} tại ${area.area_name}`,
         );
         this.publishToAdafruit(device.adafruit_feed_key, 'OFF');
       }
@@ -437,7 +489,7 @@ export class MqttService implements OnModuleInit {
 
     for (const alert of neglectedAlerts) {
       try {
-        console.log(`🚀 LEO THANG: Khu vực [${alert.area?.area_name}]...`);
+        console.log(`LEO THANG: Khu vực [${alert.area?.area_name}]...`);
 
         this.appGateway.emitRealtimeData('escalation_alert', {
           areaName: alert.area?.area_name,
@@ -449,9 +501,9 @@ export class MqttService implements OnModuleInit {
         alert.is_escalated = true;
         await this.logRepo.save(alert);
 
-        console.log(`✅ Đã xử lý KHẨN CẤP thành công cho Log ID: ${alert.id}`);
+        console.log(`Đã xử lý KHẨN CẤP thành công cho Log ID: ${alert.id}`);
       } catch (err) {
-        console.error(`❌ KHÔNG THỂ Xử lý KHẨN CẤP:`, err.message);
+        console.error(`KHÔNG THỂ XỬ LÝ KHẨN CẤP:`, err.message);
       }
     }
   }
