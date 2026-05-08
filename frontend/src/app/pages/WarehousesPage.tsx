@@ -131,7 +131,6 @@ export function WarehousesPage() {
   }, [warehouses, searchQuery]);
   return (
     <div className="p-8 space-y-6 min-h-screen bg-gray-50/50">
-      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>

@@ -13,6 +13,7 @@ export function Sidebar() {
     localStorage.removeItem('token');       // Nếu có lưu token thì xóa luôn
     navigate('/login');
   };
+  
 
   const menuItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },

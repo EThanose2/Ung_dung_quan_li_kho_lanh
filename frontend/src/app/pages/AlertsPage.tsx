@@ -4,6 +4,7 @@ import { resolveAlert, ActionLogApi, getActionLogs, getWarehouses } from '../api
 
 export function AlertsPage() {
   const [logs, setLogs] = useState<ActionLogApi[]>([]);
+  const [escalated, setEscalated] = useState<ActionLogApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
@@ -27,13 +28,12 @@ export function AlertsPage() {
       
       const resLogs = await getActionLogs(); 
       const allLogs = resLogs.data.data;
+      const escalated = allLogs.filter((log: any) => !log.is_resolved  && log.is_escalated);
 
-      // Tìm đích danh cái log cảnh báo nhiệt độ đầu tiên trong danh sách để xem
-const tempAlertLog = allLogs.find((log: any) => log.action_type === 'TEMP_ALERT');
-console.log("Check data của riêng TEMP_ALERT:", tempAlertLog);
       // Phân quyền hiển thị (Admin vs Nhân viên)
       if (isAdmin) {
         setLogs(allLogs);
+        setEscalated(escalated);
       } 
       else if (CURRENT_USER_ID) {
         const resWh = await getWarehouses();
@@ -52,13 +52,16 @@ console.log("Check data của riêng TEMP_ALERT:", tempAlertLog);
 
         // Lọc các cảnh báo thuộc khu vực được phân công
         const filteredLogs = allLogs.filter((log: any) => {
-          const logAreaId = log.area_id || log.device?.area_id || log.device?.area?.id;
-          return assignedAreaIds.has(Number(logAreaId));
+        const logAreaId = log.area.id ;
+        return assignedAreaIds.has(Number(logAreaId));
+
         });
 
         setLogs(filteredLogs);
+        setEscalated(escalated);
       } else {
         setLogs([]);
+        setEscalated([]);
       }
 
       setLastRefresh(new Date());
@@ -100,9 +103,18 @@ console.log("Check data của riêng TEMP_ALERT:", tempAlertLog);
     }
   };
 
-  const activeAlerts = logs.filter(l => !l.is_resolved);
+  // Lọc và SẮP XẾP active alerts: escalated lên đầu
+  const activeAlerts = logs
+    .filter(l => !l.is_resolved)
+    .sort((a, b) => {
+      if (a.is_escalated === b.is_escalated) return 0;
+      return a.is_escalated ? -1 : 1;
+    });
+
+  const escalatedAlerts = logs.filter(l => !l.is_resolved && l.is_escalated);
   const resolvedAlerts = logs.filter(l => l.is_resolved);
 
+  
   return (
     <div className="p-8 space-y-6">
       <div className="flex justify-between items-start">
@@ -169,32 +181,59 @@ console.log("Check data của riêng TEMP_ALERT:", tempAlertLog);
         </h2>
         <div className="space-y-3">
           {activeAlerts.length > 0 ? activeAlerts.map((log: any) => {
-            // SỬA ĐOẠN NÀY
             const areaObj = log.area; 
+            const isEscalated = log.is_escalated; // Kiểm tra trạng thái escalated
             
             return (
-              <div key={log.id} className="bg-white p-5 rounded-xl border-l-4 border-red-500 shadow-sm flex justify-between items-center transition-all hover:shadow-md">
+              <div 
+                key={log.id} 
+                // Tuỳ chỉnh CSS dựa trên isEscalated
+                className={`p-5 rounded-xl flex justify-between items-center transition-all hover:shadow-md
+                  ${isEscalated 
+                    ? 'bg-red-50 border-l-[6px] border-red-600 shadow-md animate-pulse' // Viền đậm, nền đỏ nhạt, hiệu ứng nhấp nháy
+                    : 'bg-white border-l-4 border-red-500 shadow-sm' // Mặc định
+                  }`}
+              >
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-gray-900">{log.action_type}</span>
-                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                    {/* Thêm icon báo động mạnh nếu escalated */}
+                    {isEscalated && (
+                      <AlertTriangle className="w-5 h-5 text-red-600 animate-bounce" />
+                    )}
+                    
+                    <span className={`font-bold ${isEscalated ? 'text-red-700 text-lg' : 'text-gray-900'}`}>
+                      {log.action_type}
+                    </span>
+                    
+                    {/* Badge phụ cho escalated */}
+                    {isEscalated && (
+                      <span className="text-[10px] font-bold text-red-700 bg-red-200 px-2 py-0.5 rounded uppercase ml-1">
+                        Khẩn cấp
+                      </span>
+                    )}
+
+                    <span className={`text-xs px-2 py-0.5 rounded ${isEscalated ? 'text-red-500 bg-red-100' : 'text-gray-400 bg-gray-100'}`}>
                       {new Date(log.created_at).toLocaleString('vi-VN')}
                     </span>
                   </div>
-                  <p className="text-gray-600">{log.action_value}</p>
+                  <p className={`${isEscalated ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
+                    {log.action_value}
+                  </p>
                   
-                  {/* SỬA HIỂN THỊ KHU VỰC THÀNH THẾ NÀY */}
                   {areaObj && (
-                    <p className="flex items-center gap-1 text-sm font-medium text-gray-600 mt-2">
+                    <p className={`flex items-center gap-1 text-sm mt-2 ${isEscalated ? 'font-semibold text-red-700' : 'font-medium text-gray-600'}`}>
                       <MapPin className="w-4 h-4" />
-                      Khu vực: {areaObj.area_name} {/* Hiển thị luôn tên cho xịn */}
+                      Khu vực: {areaObj.area_name}
                     </p>
                   )}
                 </div>
                 <button
-
                   onClick={() => handleResolve(log.id)}
-                  className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-all active:scale-95 shadow-lg shadow-gray-100"
+                  className={`${
+                    isEscalated 
+                      ? 'bg-red-600 hover:bg-red-700 animate-none' // Nút xử lý khẩn cấp màu đỏ
+                      : 'bg-gray-900 hover:bg-red-600'
+                    } text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-lg shadow-gray-100`}
                 >
                   Xác nhận xử lý
                 </button>
@@ -216,7 +255,6 @@ console.log("Check data của riêng TEMP_ALERT:", tempAlertLog);
         </h2>
         <div className="space-y-3">
           {resolvedAlerts.length > 0 ? resolvedAlerts.map((log: any) => {
-            // SỬA ĐOẠN NÀY
             const areaObj = log.area;
 
             return (
@@ -233,11 +271,10 @@ console.log("Check data của riêng TEMP_ALERT:", tempAlertLog);
                   </div>
                   <p className="text-gray-600 text-sm mb-1">{log.action_value}</p>
                   
-                  {/* SỬA HIỂN THỊ KHU VỰC THÀNH THẾ NÀY */}
                   {areaObj && (
                     <p className="flex items-center gap-1 text-xs font-medium text-indigo-600 mb-3">
                       <MapPin className="w-3 h-3" />
-                      Khu vực: {areaObj.area_name} {/* Hiển thị luôn tên */}
+                      Khu vực: {areaObj.area_name}
                     </p>
                   )}                  
                   <div className="flex flex-wrap gap-4 items-center mt-2 pt-2 border-t border-gray-50">

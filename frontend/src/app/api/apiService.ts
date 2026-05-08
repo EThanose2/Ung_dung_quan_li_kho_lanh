@@ -302,6 +302,7 @@ export interface ActionLogApi {
   action_value: string;
   created_at: string;
   is_resolved: boolean;
+  is_escalated: boolean;
   resolved_at?: string; 
   resolve_note?: string; 
   user?: {
