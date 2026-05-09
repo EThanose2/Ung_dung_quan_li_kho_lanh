@@ -3,12 +3,10 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 28, 2026 at 04:21 PM
+-- Generation Time: May 05, 2026 at 05:12 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
-DROP DATABASE IF EXISTS `freshguard`;
-CREATE DATABASE `freshguard`;
-USE `freshguard`;
+
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
@@ -39,15 +37,17 @@ CREATE TABLE `action_logs` (
   `area_id` int(11) DEFAULT NULL,
   `device_id` int(11) DEFAULT NULL,
   `is_resolved` tinyint(1) NOT NULL DEFAULT 0,
-  `is_escalated` tinyint(1) NOT NULL DEFAULT 0
+  `is_escalated` tinyint(1) NOT NULL DEFAULT 0,
+  `resolved_at` datetime DEFAULT NULL,
+  `resolve_note` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `action_logs`
 --
 
-INSERT INTO `action_logs` (`id`, `action_type`, `action_value`, `trigger_source`, `created_at`, `user_id`, `area_id`, `device_id`, `is_resolved`, `is_escalated`) VALUES
-(338, 'TEMP_ALERT', 'Quá ngưỡng trên (0°C). Auto BẬT quạt.', 'AUTO', '2026-04-28 10:33:32.874165', NULL, 1, 1, 0, 1);
+INSERT INTO `action_logs` (`id`, `action_type`, `action_value`, `trigger_source`, `created_at`, `user_id`, `area_id`, `device_id`, `is_resolved`, `is_escalated`, `resolved_at`, `resolve_note`) VALUES
+(338, 'TEMP_ALERT', 'Quá ngưỡng trên (0°C). Auto BẬT quạt.', 'AUTO', '2026-04-28 10:33:32.874165', NULL, 1, 1, 0, 1, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -2093,8 +2093,7 @@ ALTER TABLE `devices`
 -- Indexes for table `device_schedules`
 --
 ALTER TABLE `device_schedules`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `FK_device_schedules_device` (`deviceId`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `food_types`
@@ -2204,12 +2203,6 @@ ALTER TABLE `areas`
 --
 ALTER TABLE `devices`
   ADD CONSTRAINT `FK_4f81d9e267525f4d1e9f4b69d07` FOREIGN KEY (`area_id`) REFERENCES `areas` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION;
-
---
--- Constraints for table `device_schedules`
---
-ALTER TABLE `device_schedules`
-  ADD CONSTRAINT `FK_device_schedules_device` FOREIGN KEY (`deviceId`) REFERENCES `devices` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `sensor_readings`

@@ -33,6 +33,15 @@ export class TelemetryController {
       return { status: 'error', data: [] };
     }
   }
+    @Get('alert-logs')
+  async getAlertLogs(@Query('limit') limit: number = 20) {
+    try {
+      const data = await this.telemetryService.getAlertLogs(limit);
+      return { status: 'success', data };
+    } catch (error) {
+      return { status: 'error', data: [] };
+    }
+  }
 
   @Get('sensors/export')
   async exportCsv(

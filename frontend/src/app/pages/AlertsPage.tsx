@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, CheckCircle, Clock, RefreshCw, User, MessageSquare, MapPin } from 'lucide-react';
-import { resolveAlert, ActionLogApi, getActionLogs, getWarehouses } from '../api/apiService'; 
+import { resolveAlert, ActionLogApi, getAlertLogs, getWarehouses } from '../api/apiService'; 
 
 export function AlertsPage() {
   const [logs, setLogs] = useState<ActionLogApi[]>([]);
@@ -26,7 +26,7 @@ export function AlertsPage() {
     try {
       setLoading(true);
       
-      const resLogs = await getActionLogs(); 
+      const resLogs = await getAlertLogs(); 
       const allLogs = resLogs.data.data;
       const escalated = allLogs.filter((log: any) => !log.is_resolved  && log.is_escalated);
 
@@ -272,7 +272,7 @@ export function AlertsPage() {
                   <p className="text-gray-600 text-sm mb-1">{log.action_value}</p>
                   
                   {areaObj && (
-                    <p className="flex items-center gap-1 text-xs font-medium text-indigo-600 mb-3">
+                    <p className="flex items-center gap-1 text-xs font-medium text-green-600 mb-3">
                       <MapPin className="w-3 h-3" />
                       Khu vực: {areaObj.area_name}
                     </p>

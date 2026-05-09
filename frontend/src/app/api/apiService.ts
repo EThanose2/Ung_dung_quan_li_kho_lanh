@@ -228,6 +228,10 @@ export function getActionLogs() {
   return axiosClient.get<{ status: string; data: ActionLogApi[] }>("/action-logs");
 }
 
+export function getAlertLogs() {
+  return axiosClient.get<{ status: string; data: ActionLogApi[] }>("/alert-logs");
+}
+
 // ================================================================
 // DEVICES (CRUD)
 // ================================================================

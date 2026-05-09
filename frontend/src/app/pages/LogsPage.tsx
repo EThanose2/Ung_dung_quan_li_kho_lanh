@@ -8,12 +8,14 @@ export function LogsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDate, setFilterDate] = useState(""); // yyyy-mm-dd
+  
 
   useEffect(() => {
     const fetchLogs = async () => {
       try {
         const res = await getActionLogs();
         setLogs(res.data.data);
+        console.log("Fetched logs:", res.data.data);
       } catch (err) {
         console.error("Lỗi lấy logs:", err);
       } finally {
@@ -22,7 +24,7 @@ export function LogsPage() {
     };
     fetchLogs();
   }, []);
-
+ 
   const filteredLogs = logs.filter((log) => {
     // Lọc theo từ khoá
     const content = `${log.action_type} ${log.action_value}`.toLowerCase();
@@ -36,6 +38,9 @@ export function LogsPage() {
 
     return true;
   });
+    const uniqueFilteredLogs = filteredLogs.filter(
+      (log, index, self) => self.findIndex((l) => l.id === log.id) === index
+    )
 
   const getLogIcon = (action_type: string) => {
     const t = action_type.toUpperCase();
@@ -123,7 +128,7 @@ export function LogsPage() {
       <div className="grid gap-4">
         {loading && <div className="bg-white rounded-xl p-12 text-center text-gray-400">Đang tải nhật ký...</div>}
 
-        {!loading && filteredLogs.map((log) => (
+        {!loading && uniqueFilteredLogs.map((log) => (
           <div key={log.id} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:border-[#2ECC71]/30 transition-all group">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-6">
@@ -153,7 +158,7 @@ export function LogsPage() {
           </div>
         ))}
 
-        {!loading && filteredLogs.length === 0 && (
+        {!loading && uniqueFilteredLogs.length === 0 && (
           <div className="bg-white rounded-xl p-16 text-center shadow-sm border border-gray-100">
             <ClipboardList className="w-12 h-12 text-gray-200 mx-auto mb-4" />
             <p className="text-gray-400 font-bold uppercase text-xs tracking-widest">Không có dữ liệu nhật ký</p>
