@@ -15,7 +15,6 @@ export function LogsPage() {
       try {
         const res = await getActionLogs();
         setLogs(res.data.data);
-        console.log("Fetched logs:", res.data.data);
       } catch (err) {
         console.error("Lỗi lấy logs:", err);
       } finally {
