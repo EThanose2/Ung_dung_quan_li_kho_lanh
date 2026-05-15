@@ -62,6 +62,8 @@ export interface ActionLogApi {
   action_type: string;
   action_value: string;
   created_at: string;
+  is_critical: boolean;
+  is_warning: boolean;
   is_resolved: boolean;
   is_escalated: boolean;
   resolved_at?: string;

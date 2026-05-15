@@ -47,7 +47,12 @@ CREATE TABLE `action_logs` (
 --
 
 INSERT INTO `action_logs` (`id`, `action_type`, `action_value`, `trigger_source`, `created_at`, `user_id`, `area_id`, `device_id`, `is_resolved`, `is_escalated`, `resolved_at`, `resolve_note`) VALUES
-(338, 'TEMP_ALERT', 'Quá ngưỡng trên (0°C). Auto BẬT quạt.', 'AUTO', '2026-04-28 10:33:32.874165', NULL, 1, 1, 0, 1, NULL, NULL);
+(338, 'HUMI_ALERT', 'Quá ngưỡng trên (0%). Auto BẬT quạt.', 'AUTO', '2026-05-14 11:53:32.874165', NULL, 1, 1, 0, 0, NULL, NULL),
+(340, 'HUMI_ALERT', 'Quá ngưỡng trên (0%). Auto BẬT quạt.', 'AUTO', '2026-05-14 12:23:32.874165', NULL, 1, 1, 0, 0, NULL, NULL),
+(339, 'TEMP_ALERT', 'Kho sắp vượt ngưỡng trên (0%).', 'AUTO', '2026-05-14 13:02:32.874165', NULL, 1, 1, 0, 0, NULL, NULL);
+
+
+
 
 -- --------------------------------------------------------
 
@@ -168,7 +173,7 @@ CREATE TABLE `food_types` (
 --
 
 INSERT INTO `food_types` (`id`, `food_name`, `min_temp`, `max_temp`, `min_humi`, `max_humi`) VALUES
-(1, 'Thịt Bò Kobe', -18, -5, 40, 80),
+(1, 'Thịt Bò Kobe', -1, 5, 60, 80),
 (2, 'Rau xà lách', 1, 4, 90, 95),
 (3, 'Test - Nhiet do Phong', 1, 40, 50, 55);
 

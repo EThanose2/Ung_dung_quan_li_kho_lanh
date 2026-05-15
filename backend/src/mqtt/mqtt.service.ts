@@ -221,6 +221,30 @@ export class MqttService implements OnModuleInit {
           if (this.manualOverrides.has(areaId))
             this.manualOverrides.delete(areaId);
 
+          if (isWarning) {
+            console.log(
+              `WARNING! Khu vực [${area.area_name}] ${typeName} SẮP VƯỢT NGƯỠNG!`,
+            );
+            
+            await this.logRepo.save(
+              this.logRepo.create({
+                action_type: alertType, // Nó sẽ tự lấy TEMP_ALERT hoặc HUMI_ALERT
+                action_value: `${typeName} sắp vượt ngưỡng (${numericValue}${unit}). Cần chú ý!`,
+                trigger_source: 'AUTO',
+                area,
+                device,
+              }),
+            );
+             this.appGateway.emitRealtimeData('warning_alert', {
+              areaId,
+              areaName: area.area_name,
+              message: `WARNING: ${typeName} sắp vượt ngưỡng (${numericValue}${unit}). Cần chú ý!`,
+              operatorIds: area.operators
+                ? area.operators.map((op) => op.id)
+                : [],
+            });
+            
+          } 
           // 1. NẾU QUÁ NÓNG / QUÁ ẨM -> BẬT QUẠT LÀM MÁT
           if (isTooHot) {
             console.log(
@@ -277,6 +301,7 @@ export class MqttService implements OnModuleInit {
             });
             
           } 
+    
           // 3. NẾU AN TOÀN (Logic chéo hàng xóm sếp cứ giữ nguyên)
           else if (isNormal) {
             // 1. Xác định thằng "hàng xóm" là ai (TEMP <-> HUMI)
@@ -470,7 +495,7 @@ export class MqttService implements OnModuleInit {
   @Cron(CronExpression.EVERY_MINUTE)
   async checkAndEscalateAlerts() {
     // Tìm thời điểm cách đây 15 phút
-    const fifteenMinsAgo = new Date(Date.now() - 0.5 * 60 * 1000);
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
 
     // Truy vấn các log Critical (TEMP_ALERT, HUMI_ALERT, EMERGENCY_SOS)
     // Mà chưa được xử lý (is_resolved = false)
