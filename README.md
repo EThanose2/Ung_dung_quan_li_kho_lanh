@@ -7,7 +7,7 @@ FreshGuard là hệ thống quản lý và giám sát kho lạnh thông minh the
 ## 🗂️ Cấu trúc Project
 
 ```
-FRESHGUARD/
+Ung_dung_quan_li_kho_lanh-main/
 ├── backend/       # NestJS REST API + WebSocket + MQTT
 └── frontend/      # React + Vite Dashboard
 ```
@@ -54,7 +54,7 @@ FRESHGUARD/
 
 ```bash
 git clone https://github.com/<your-username>/FRESHGUARD.git
-cd FRESHGUARD
+cd Ung_dung_quan_li_kho_lanh-main
 ```
 
 ### 2. Cài đặt Database
