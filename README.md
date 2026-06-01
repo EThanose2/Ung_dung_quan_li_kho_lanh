@@ -53,7 +53,7 @@ Ung_dung_quan_li_kho_lanh-main/
 ### 1. Clone project
 
 ```bash
-git clone https://github.com/<your-username>/FRESHGUARD.git
+git clone https://github.com/EThanose2/Ung_dung_quan_li_kho_lanh.git
 cd Ung_dung_quan_li_kho_lanh-main
 ```
 
